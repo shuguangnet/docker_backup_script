@@ -123,7 +123,7 @@ parse_arguments() {
 detect_docker_compose() {
     local container_name="$1"
     
-    # 方法1: 检查容器标签
+    # 方法1: 检查容器标签（最准确的方法）
     local compose_project=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.project"}}' "${container_name}" 2>/dev/null || echo "")
     local compose_service=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.service"}}' "${container_name}" 2>/dev/null || echo "")
     
@@ -132,23 +132,98 @@ detect_docker_compose() {
         return 0
     fi
     
-    # 方法2: 检查容器名称模式 (project_service_number)
+    # 方法2: 检查其他compose相关标签
+    local compose_version=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.version"}}' "${container_name}" 2>/dev/null || echo "")
+    local compose_config_files=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.config_files"}}' "${container_name}" 2>/dev/null || echo "")
+    
+    if [[ -n "${compose_version}" || -n "${compose_config_files}" ]]; then
+        # 尝试从容器名称推断项目和服务名
+        if [[ "${container_name}" =~ ^([a-zA-Z0-9_-]+)_([a-zA-Z0-9_-]+)_[0-9]+$ ]]; then
+            local project="${BASH_REMATCH[1]}"
+            local service="${BASH_REMATCH[2]}"
+            echo "${project}:${service}"
+            return 0
+        elif [[ "${container_name}" =~ ^([a-zA-Z0-9_-]+)_([a-zA-Z0-9_-]+)$ ]]; then
+            local project="${BASH_REMATCH[1]}"
+            local service="${BASH_REMATCH[2]}"
+            echo "${project}:${service}"
+            return 0
+        fi
+    fi
+    
+    # 方法3: 检查容器名称模式（更宽松的匹配）
     if [[ "${container_name}" =~ ^([a-zA-Z0-9_-]+)_([a-zA-Z0-9_-]+)_[0-9]+$ ]]; then
+        local project="${BASH_REMATCH[1]}"
+        local service="${BASH_REMATCH[2]}"
+        echo "${project}:${service}"
+        return 0
+    elif [[ "${container_name}" =~ ^([a-zA-Z0-9_-]+)_([a-zA-Z0-9_-]+)$ ]]; then
         local project="${BASH_REMATCH[1]}"
         local service="${BASH_REMATCH[2]}"
         echo "${project}:${service}"
         return 0
     fi
     
-    # 方法3: 检查网络名称
+    # 方法4: 检查网络名称（更全面的网络检测）
     local networks=$(docker inspect --format='{{range $net, $conf := .NetworkSettings.Networks}}{{$net}} {{end}}' "${container_name}" 2>/dev/null || echo "")
     for network in ${networks}; do
+        # 检查常见的compose网络模式
         if [[ "${network}" =~ ^([a-zA-Z0-9_-]+)_default$ ]]; then
             local project="${BASH_REMATCH[1]}"
             echo "${project}:unknown"
             return 0
+        elif [[ "${network}" =~ ^([a-zA-Z0-9_-]+)_network$ ]]; then
+            local project="${BASH_REMATCH[1]}"
+            echo "${project}:unknown"
+            return 0
+        elif [[ "${network}" =~ ^([a-zA-Z0-9_-]+)_([a-zA-Z0-9_-]+)_network$ ]]; then
+            local project="${BASH_REMATCH[1]}"
+            local service="${BASH_REMATCH[2]}"
+            echo "${project}:${service}"
+            return 0
         fi
     done
+    
+    # 方法5: 检查容器的工作目录和挂载点
+    local working_dir=$(docker inspect --format='{{.Config.WorkingDir}}' "${container_name}" 2>/dev/null || echo "")
+    if [[ -n "${working_dir}" ]]; then
+        # 检查工作目录是否包含compose相关路径
+        if [[ "${working_dir}" =~ /([a-zA-Z0-9_-]+)/?$ ]]; then
+            local project="${BASH_REMATCH[1]}"
+            # 尝试从容器名称提取服务名
+            if [[ "${container_name}" =~ ^.*_([a-zA-Z0-9_-]+)(_[0-9]+)?$ ]]; then
+                local service="${BASH_REMATCH[1]}"
+                echo "${project}:${service}"
+                return 0
+            else
+                echo "${project}:unknown"
+                return 0
+            fi
+        fi
+    fi
+    
+    # 方法6: 检查挂载点路径
+    local mounts=$(docker inspect --format='{{json .Mounts}}' "${container_name}" 2>/dev/null || echo "[]")
+    if [[ -n "${mounts}" && "${mounts}" != "[]" ]]; then
+        # 从挂载点路径推断项目名
+        local mount_paths=$(echo "${mounts}" | jq -r '.[].Source' 2>/dev/null || echo "")
+        for mount_path in ${mount_paths}; do
+            if [[ "${mount_path}" =~ /([a-zA-Z0-9_-]+)/[a-zA-Z0-9_-]+/?$ ]]; then
+                local project="${BASH_REMATCH[1]}"
+                # 检查这个项目是否真的有compose文件
+                if find_docker_compose_files "${project}" | grep -q .; then
+                    if [[ "${container_name}" =~ ^.*_([a-zA-Z0-9_-]+)(_[0-9]+)?$ ]]; then
+                        local service="${BASH_REMATCH[1]}"
+                        echo "${project}:${service}"
+                        return 0
+                    else
+                        echo "${project}:unknown"
+                        return 0
+                    fi
+                fi
+            fi
+        done
+    fi
     
     return 1
 }
@@ -156,6 +231,8 @@ detect_docker_compose() {
 # 查找docker-compose文件
 find_docker_compose_files() {
     local project_name="$1"
+    local container_name="$2"
+    
     local search_paths=(
         "/opt"
         "/home"
@@ -163,6 +240,9 @@ find_docker_compose_files() {
         "/var/lib/docker/volumes"
         "/docker-compose"
         "/compose"
+        "/app"
+        "/srv"
+        "/var/www"
     )
     
     # 添加当前工作目录
@@ -173,20 +253,109 @@ find_docker_compose_files() {
         search_paths+=("${HOME}")
     fi
     
-    local compose_files=()
-    
-    for search_path in "${search_paths[@]}"; do
-        if [[ -d "${search_path}" ]]; then
-            # 查找包含项目名称的目录
-            while IFS= read -r -d '' dir; do
-                # 检查常见的docker-compose文件名
-                for compose_file in "docker-compose.yml" "docker-compose.yaml" "compose.yml" "compose.yaml"; do
-                    if [[ -f "${dir}/${compose_file}" ]]; then
-                        compose_files+=("${dir}/${compose_file}")
-                    fi
-                done
-            done < <(find "${search_path}" -maxdepth 3 -type d -name "*${project_name}*" -print0 2>/dev/null || true)
+    # 从容器标签获取compose文件路径
+    local compose_config_files=$(docker inspect --format='{{index .Config.Labels "com.docker.compose.config_files"}}' "${container_name}" 2>/dev/null || echo "")
+    if [[ -n "${compose_config_files}" ]]; then
+        local config_dir=$(dirname "${compose_config_files}")
+        if [[ -d "${config_dir}" ]]; then
+            search_paths+=("${config_dir}")
         fi
+    fi
+    
+    # 从容器工作目录推断
+    local working_dir=$(docker inspect --format='{{.Config.WorkingDir}}' "${container_name}" 2>/dev/null || echo "")
+    if [[ -n "${working_dir}" && "${working_dir}" != "/" ]]; then
+        local work_dir_parent=$(dirname "${working_dir}")
+        if [[ -d "${work_dir_parent}" ]]; then
+            search_paths+=("${work_dir_parent}")
+        fi
+    fi
+    
+    # 从挂载点推断
+    local mounts=$(docker inspect --format='{{json .Mounts}}' "${container_name}" 2>/dev/null || echo "[]")
+    if [[ -n "${mounts}" && "${mounts}" != "[]" ]]; then
+        local mount_paths=$(echo "${mounts}" | jq -r '.[].Source' 2>/dev/null || echo "")
+        for mount_path in ${mount_paths}; do
+            if [[ -d "${mount_path}" ]]; then
+                local mount_parent=$(dirname "${mount_path}")
+                if [[ -d "${mount_parent}" ]]; then
+                    search_paths+=("${mount_parent}")
+                fi
+            fi
+        done
+    done
+    
+    local compose_files=()
+    local found_files=()
+    
+    # 去重搜索路径
+    local unique_paths=()
+    for path in "${search_paths[@]}"; do
+        if [[ -d "${path}" ]]; then
+            local is_duplicate=false
+            for existing_path in "${unique_paths[@]}"; do
+                if [[ "${path}" == "${existing_path}" ]]; then
+                    is_duplicate=true
+                    break
+                fi
+            done
+            if [[ "${is_duplicate}" == false ]]; then
+                unique_paths+=("${path}")
+            fi
+        fi
+    done
+    
+    # 按优先级搜索
+    for search_path in "${unique_paths[@]}"; do
+        # 1. 精确匹配项目名称的目录
+        if [[ -d "${search_path}/${project_name}" ]]; then
+            for compose_file in "docker-compose.yml" "docker-compose.yaml" "compose.yml" "compose.yaml"; do
+                if [[ -f "${search_path}/${project_name}/${compose_file}" ]]; then
+                    compose_files+=("${search_path}/${project_name}/${compose_file}")
+                    found_files+=("${compose_file}")
+                fi
+            done
+        fi
+        
+        # 2. 在搜索路径中查找包含项目名称的目录
+        while IFS= read -r -d '' dir; do
+            for compose_file in "docker-compose.yml" "docker-compose.yaml" "compose.yml" "compose.yaml"; do
+                if [[ -f "${dir}/${compose_file}" ]]; then
+                    # 检查是否已经找到这个文件
+                    local is_duplicate=false
+                    for found_file in "${found_files[@]}"; do
+                        if [[ "${compose_file}" == "${found_file}" ]]; then
+                            is_duplicate=true
+                            break
+                        fi
+                    done
+                    if [[ "${is_duplicate}" == false ]]; then
+                        compose_files+=("${dir}/${compose_file}")
+                        found_files+=("${compose_file}")
+                    fi
+                fi
+            done
+        done < <(find "${search_path}" -maxdepth 3 -type d -name "*${project_name}*" -print0 2>/dev/null || true)
+        
+        # 3. 在搜索路径根目录查找compose文件
+        for compose_file in "docker-compose.yml" "docker-compose.yaml" "compose.yml" "compose.yaml"; do
+            if [[ -f "${search_path}/${compose_file}" ]]; then
+                # 检查文件内容是否包含项目名称
+                if grep -q "${project_name}" "${search_path}/${compose_file}" 2>/dev/null; then
+                    local is_duplicate=false
+                    for found_file in "${found_files[@]}"; do
+                        if [[ "${compose_file}" == "${found_file}" ]]; then
+                            is_duplicate=true
+                            break
+                        fi
+                    done
+                    if [[ "${is_duplicate}" == false ]]; then
+                        compose_files+=("${search_path}/${compose_file}")
+                        found_files+=("${compose_file}")
+                    fi
+                fi
+            fi
+        done
     done
     
     echo "${compose_files[@]}"
@@ -417,7 +586,7 @@ backup_compose_files() {
     local service_name=$(echo "${compose_info}" | cut -d: -f2)
     
     # 查找docker-compose文件
-    local compose_files=($(find_docker_compose_files "${project_name}"))
+    local compose_files=($(find_docker_compose_files "${project_name}" "${container_name}"))
     
     if [[ ${#compose_files[@]} -gt 0 ]]; then
         log_info "  找到 ${#compose_files[@]} 个docker-compose文件"
