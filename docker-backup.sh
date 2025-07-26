@@ -37,11 +37,13 @@ show_usage() {
     -v, --verbose          详细输出模式
     --exclude-volumes      排除数据卷备份
     --exclude-mounts       排除挂载点备份
+    --exclude-images      排除镜像备份
 
 示例:
     $0 nginx mysql                    # 备份指定容器
     $0 -a                            # 备份所有运行中的容器
     $0 -f nginx                      # 完整备份nginx容器（包含镜像）
+    $0 --exclude-images nginx        # 备份nginx容器但排除镜像
     $0 -o /backup nginx              # 指定备份目录
 
 EOF
@@ -57,6 +59,7 @@ parse_arguments() {
     VERBOSE=false
     EXCLUDE_VOLUMES=false
     EXCLUDE_MOUNTS=false
+    EXCLUDE_IMAGES=false
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -90,6 +93,10 @@ parse_arguments() {
                 ;;
             --exclude-mounts)
                 EXCLUDE_MOUNTS=true
+                shift
+                ;;
+            --exclude-images)
+                EXCLUDE_IMAGES=true
                 shift
                 ;;
             -*)
@@ -278,6 +285,11 @@ backup_image() {
     local container_name="$1"
     local backup_dir="$2"
     
+    if [[ "${EXCLUDE_IMAGES}" == true ]]; then
+        log_info "跳过镜像备份（--exclude-images）"
+        return
+    fi
+    
     if [[ "${FULL_BACKUP}" != true ]]; then
         log_info "跳过镜像备份（使用 -f 选项启用完整备份）"
         return
@@ -288,10 +300,16 @@ backup_image() {
     local image=$(docker inspect --format='{{.Config.Image}}' "${container_name}")
     local image_file="${backup_dir}/${container_name}_image.tar"
     
-    docker save "${image}" -o "${image_file}"
-    gzip "${image_file}"
-    
-    log_success "镜像备份完成: ${image_file}.gz"
+    if docker save "${image}" -o "${image_file}"; then
+        if gzip "${image_file}"; then
+            log_success "镜像备份完成: ${image_file}.gz"
+        else
+            log_warning "镜像压缩失败，保留未压缩文件: ${image_file}"
+        fi
+    else
+        log_error "镜像备份失败: ${image}"
+        return 1
+    fi
 }
 
 # 收集容器日志
@@ -588,7 +606,7 @@ Docker容器备份摘要
 - 容器日志 ✓
 $([ "${EXCLUDE_MOUNTS}" != true ] && echo "- 挂载点数据 ✓" || echo "- 挂载点数据 ✗ (已排除)")
 $([ "${EXCLUDE_VOLUMES}" != true ] && echo "- 数据卷 ✓" || echo "- 数据卷 ✗ (已排除)")
-$([ "${FULL_BACKUP}" == true ] && echo "- 容器镜像 ✓" || echo "- 容器镜像 ✗ (未启用完整备份)")
+$([ "${EXCLUDE_IMAGES}" != true ] && [ "${FULL_BACKUP}" == true ] && echo "- 容器镜像 ✓" || echo "- 容器镜像 ✗ (已排除或未启用完整备份)")
 
 恢复说明:
 1. 将整个备份目录复制到目标服务器
@@ -672,6 +690,27 @@ main() {
     if [[ -f "${CONFIG_FILE}" ]]; then
         log_info "加载配置文件: ${CONFIG_FILE}"
         source "${CONFIG_FILE}"
+        
+        # 应用配置文件中的默认设置
+        if [[ "${FULL_BACKUP}" == false && "${DEFAULT_FULL_BACKUP:-false}" == true ]]; then
+            FULL_BACKUP=true
+            log_info "根据配置文件启用完整备份模式"
+        fi
+        
+        if [[ "${EXCLUDE_VOLUMES}" == false && "${DEFAULT_EXCLUDE_VOLUMES:-false}" == true ]]; then
+            EXCLUDE_VOLUMES=true
+            log_info "根据配置文件排除数据卷备份"
+        fi
+        
+        if [[ "${EXCLUDE_MOUNTS}" == false && "${DEFAULT_EXCLUDE_MOUNTS:-false}" == true ]]; then
+            EXCLUDE_MOUNTS=true
+            log_info "根据配置文件排除挂载点备份"
+        fi
+        
+        if [[ "${EXCLUDE_IMAGES}" == false && "${DEFAULT_EXCLUDE_IMAGES:-false}" == true ]]; then
+            EXCLUDE_IMAGES=true
+            log_info "根据配置文件排除镜像备份"
+        fi
     fi
     
     # 创建备份根目录
