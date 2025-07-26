@@ -1,0 +1,499 @@
+# Docker容器备份和恢复工具
+
+一个功能完整的Docker容器备份和恢复解决方案，专为Linux系统设计，能够自动识别并备份Docker容器的完整配置、挂载点和数据卷，支持在新服务器上一键恢复。
+
+## 🚀 功能特性
+
+### 核心功能
+- **完整备份**：备份容器配置、环境变量、端口映射、网络设置
+- **数据保护**：支持Docker volumes和bind mounts的完整备份
+- **镜像备份**：可选择性备份容器镜像（完整备份模式）
+- **一键恢复**：在新服务器上快速恢复容器和数据
+- **增量支持**：智能识别和备份变更的数据
+
+### 高级特性
+- **灵活配置**：支持配置文件和命令行参数
+- **批量操作**：支持备份所有容器或指定容器列表
+- **容器过滤**：支持按名称、标签等条件过滤容器
+- **并发备份**：支持多容器并发备份提高效率
+- **安全加密**：支持GPG加密备份文件
+- **远程存储**：支持备份到远程服务器
+- **通知机制**：支持邮件、Webhook、Slack通知
+
+## 📋 系统要求
+
+### 必需工具
+- **Docker**: 18.06+ (支持Docker API v1.38+)
+- **Bash**: 4.0+ 
+- **jq**: 1.5+ (用于JSON解析)
+- **tar**: GNU tar (用于文件压缩)
+
+### 可选工具
+- **curl**: 用于远程上传和通知
+- **gpg**: 用于备份加密
+- **rsync**: 用于高效数据同步
+
+### 安装依赖
+
+#### Ubuntu/Debian
+```bash
+sudo apt update
+sudo apt install jq curl tar rsync gnupg
+```
+
+#### CentOS/RHEL/Rocky Linux
+```bash
+sudo yum install epel-release
+sudo yum install jq curl tar rsync gnupg2
+```
+
+#### Alpine Linux
+```bash
+apk add jq curl tar rsync gnupg
+```
+
+## 🛠️ 安装部署
+
+### 1. 下载脚本
+```bash
+# 克隆或下载脚本文件
+git clone <repository-url>
+cd docker-backup
+
+# 或者直接下载脚本文件
+wget <download-url>/docker-backup.sh
+wget <download-url>/docker-restore.sh
+wget <download-url>/backup-utils.sh
+wget <download-url>/backup.conf
+```
+
+### 2. 设置权限
+```bash
+chmod +x docker-backup.sh
+chmod +x docker-restore.sh
+chmod +x backup-utils.sh
+```
+
+### 3. 配置文件
+```bash
+# 复制并编辑配置文件
+cp backup.conf backup.conf.local
+vim backup.conf.local
+```
+
+### 4. 创建备份目录
+```bash
+sudo mkdir -p /var/backups/docker
+sudo chown $(whoami):$(whoami) /var/backups/docker
+```
+
+## 📖 使用指南
+
+### 基础备份操作
+
+#### 备份单个容器
+```bash
+# 备份nginx容器
+./docker-backup.sh nginx
+
+# 备份nginx和mysql容器
+./docker-backup.sh nginx mysql
+```
+
+#### 备份所有容器
+```bash
+# 备份所有运行中的容器
+./docker-backup.sh -a
+
+# 完整备份所有容器（包含镜像）
+./docker-backup.sh -a -f
+```
+
+#### 高级备份选项
+```bash
+# 指定备份目录
+./docker-backup.sh -o /custom/backup/path nginx
+
+# 排除数据卷和挂载点
+./docker-backup.sh --exclude-volumes --exclude-mounts nginx
+
+# 使用自定义配置文件
+./docker-backup.sh -c /path/to/custom.conf nginx
+
+# 详细输出模式
+./docker-backup.sh -v nginx
+```
+
+### 容器恢复操作
+
+#### 基础恢复
+```bash
+# 恢复容器（基础模式）
+./docker-restore.sh /path/to/backup/nginx_20231201_120000
+
+# 强制恢复（覆盖现有容器）
+./docker-restore.sh -f /path/to/backup/nginx_20231201_120000
+```
+
+#### 高级恢复选项
+```bash
+# 恢复但不启动容器
+./docker-restore.sh -n /path/to/backup/nginx_20231201_120000
+
+# 指定新的容器名称
+./docker-restore.sh --container-name new-nginx /path/to/backup/nginx_20231201_120000
+
+# 跳过特定组件恢复
+./docker-restore.sh --no-volumes --no-mounts /path/to/backup/nginx_20231201_120000
+```
+
+## ⚙️ 配置选项
+
+### 主要配置参数
+
+#### 基础配置
+```bash
+# 默认备份目录
+DEFAULT_BACKUP_DIR="/var/backups/docker"
+
+# 备份保留天数
+BACKUP_RETENTION_DAYS=30
+
+# 压缩格式（gzip, bzip2, xz）
+COMPRESSION_FORMAT="gzip"
+
+# 详细日志模式
+VERBOSE_MODE=false
+```
+
+#### 备份选项
+```bash
+# 默认完整备份（包含镜像）
+DEFAULT_FULL_BACKUP=false
+
+# 排除数据卷备份
+DEFAULT_EXCLUDE_VOLUMES=false
+
+# 排除挂载点备份
+DEFAULT_EXCLUDE_MOUNTS=false
+
+# 备份前暂停容器
+PAUSE_CONTAINERS_DURING_BACKUP=false
+```
+
+#### 性能配置
+```bash
+# 并发备份数量
+MAX_CONCURRENT_BACKUPS=3
+
+# 最大备份文件大小（MB）
+MAX_BACKUP_SIZE_MB=0
+
+# 磁盘空间缓冲区（MB）
+DISK_SPACE_BUFFER_MB=1024
+```
+
+### 容器过滤配置
+```bash
+# 排除容器名称模式
+EXCLUDE_CONTAINER_PATTERNS=".*-temp .*-test"
+
+# 只备份特定标签的容器
+INCLUDE_CONTAINER_LABELS="backup=true"
+
+# 排除特定标签的容器
+EXCLUDE_CONTAINER_LABELS="backup=false"
+```
+
+## 📁 备份目录结构
+
+```
+backup_dir/
+├── config/                    # 容器配置文件
+│   ├── container_inspect.json # 完整容器配置
+│   ├── container_info.txt     # 关键配置信息
+│   ├── cmd.txt               # 启动命令
+│   ├── entrypoint.txt        # 入口点
+│   ├── network_settings.json # 网络配置
+│   └── mounts.json           # 挂载信息
+├── volumes/                   # 数据卷备份
+│   ├── volume1.tar.gz        # 数据卷压缩包
+│   └── volume1_info.json     # 数据卷信息
+├── mounts/                    # 挂载点备份
+│   ├── mount_0/              # 挂载点0
+│   │   ├── mount_info.json   # 挂载信息
+│   │   └── data.tar.gz       # 挂载数据
+│   └── mount_1/              # 挂载点1
+├── logs/                      # 容器日志
+│   └── container.log         # 容器运行日志
+├── nginx_image.tar.gz        # 容器镜像（完整备份）
+├── restore.sh                # 自动恢复脚本
+├── generated_run_command.sh  # Docker运行命令
+└── backup_summary.txt        # 备份摘要
+```
+
+## 🔧 实际使用示例
+
+### 场景1：Web应用备份
+
+```bash
+# 1. 备份nginx和mysql容器
+./docker-backup.sh -f nginx mysql
+
+# 2. 在新服务器恢复
+scp -r nginx_20231201_120000/ user@new-server:/tmp/
+ssh user@new-server "cd /tmp && ./docker-restore.sh nginx_20231201_120000"
+```
+
+### 场景2：定期自动备份
+
+```bash
+# 创建定时任务脚本
+cat > /usr/local/bin/docker-auto-backup.sh << 'EOF'
+#!/bin/bash
+cd /opt/docker-backup
+./docker-backup.sh -a -o /var/backups/docker
+find /var/backups/docker -type d -mtime +7 -exec rm -rf {} \;
+EOF
+
+chmod +x /usr/local/bin/docker-auto-backup.sh
+
+# 添加crontab任务（每天凌晨2点备份）
+echo "0 2 * * * /usr/local/bin/docker-auto-backup.sh" | sudo crontab -
+```
+
+### 场景3：生产环境迁移
+
+```bash
+# 1. 在源服务器备份所有容器
+./docker-backup.sh -a -f
+
+# 2. 打包备份文件
+tar -czf docker-backup-$(date +%Y%m%d).tar.gz /var/backups/docker/*
+
+# 3. 传输到目标服务器
+rsync -avz docker-backup-$(date +%Y%m%d).tar.gz user@target-server:/tmp/
+
+# 4. 在目标服务器解压并恢复
+ssh user@target-server << 'EOF'
+cd /tmp
+tar -xzf docker-backup-$(date +%Y%m%d).tar.gz
+cd var/backups/docker
+for backup_dir in */; do
+    if [[ -d "$backup_dir" ]]; then
+        ./docker-restore.sh -f "$backup_dir"
+    fi
+done
+EOF
+```
+
+### 场景4：容器迁移到新名称
+
+```bash
+# 备份原容器
+./docker-backup.sh old-app
+
+# 恢复为新名称
+./docker-restore.sh --container-name new-app old-app_20231201_120000/
+```
+
+## 🛡️ 安全最佳实践
+
+### 1. 备份加密
+```bash
+# 在backup.conf中启用加密
+ENCRYPT_BACKUPS=true
+GPG_RECIPIENT="backup@company.com"
+
+# 生成GPG密钥
+gpg --gen-key
+gpg --export backup@company.com > public.key
+```
+
+### 2. 权限控制
+```bash
+# 设置适当的文件权限
+BACKUP_FILE_PERMISSIONS=600
+BACKUP_DIR_PERMISSIONS=700
+
+# 限制备份目录访问
+sudo chown backup:backup /var/backups/docker
+sudo chmod 700 /var/backups/docker
+```
+
+### 3. 远程备份
+```bash
+# 配置SSH密钥认证
+ssh-keygen -t rsa -b 4096
+ssh-copy-id backup@backup-server
+
+# 配置远程备份
+REMOTE_BACKUP_ENABLED=true
+REMOTE_BACKUP_HOST="backup-server.company.com"
+REMOTE_BACKUP_USER="backup"
+REMOTE_BACKUP_PATH="/backups/docker"
+```
+
+## 🚨 故障排除
+
+### 常见问题及解决方案
+
+#### 1. Docker权限问题
+```bash
+# 错误: permission denied while trying to connect to Docker daemon
+# 解决: 将用户添加到docker组
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+#### 2. jq工具缺失
+```bash
+# 错误: jq: command not found
+# 解决: 安装jq工具
+sudo apt install jq  # Ubuntu/Debian
+sudo yum install jq  # CentOS/RHEL
+```
+
+#### 3. 磁盘空间不足
+```bash
+# 错误: No space left on device
+# 解决: 清理旧备份或增加磁盘空间
+find /var/backups/docker -type d -mtime +30 -exec rm -rf {} \;
+```
+
+#### 4. 容器启动失败
+```bash
+# 检查容器日志
+docker logs container-name
+
+# 检查端口冲突
+netstat -tulpn | grep :port
+
+# 手动启动容器调试
+docker run -it --rm image-name /bin/bash
+```
+
+#### 5. 挂载点权限问题
+```bash
+# 检查文件权限
+ls -la /path/to/mount
+
+# 修复权限
+sudo chown -R user:group /path/to/mount
+sudo chmod -R 755 /path/to/mount
+```
+
+### 调试模式
+
+#### 启用详细日志
+```bash
+# 使用-v选项启用详细输出
+./docker-backup.sh -v nginx
+
+# 或在配置文件中设置
+VERBOSE_MODE=true
+LOG_LEVEL=4
+```
+
+#### 试运行模式
+```bash
+# 在配置文件中启用试运行
+DRY_RUN=true
+
+# 或者使用测试容器
+docker run --name test-container hello-world
+./docker-backup.sh test-container
+```
+
+## 📊 监控和通知
+
+### 邮件通知配置
+```bash
+EMAIL_NOTIFICATIONS=true
+EMAIL_SMTP_SERVER="smtp.gmail.com"
+EMAIL_SMTP_PORT=587
+EMAIL_USERNAME="backup@company.com"
+EMAIL_PASSWORD="app-password"
+EMAIL_FROM="backup@company.com"
+EMAIL_TO="admin@company.com"
+```
+
+### Slack通知配置
+```bash
+SLACK_NOTIFICATIONS=true
+SLACK_WEBHOOK_URL="https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK"
+```
+
+### Webhook通知配置
+```bash
+WEBHOOK_NOTIFICATIONS=true
+WEBHOOK_URL="https://api.company.com/backup-notifications"
+WEBHOOK_TIMEOUT=30
+```
+
+## 🔄 定期维护
+
+### 清理旧备份
+```bash
+# 手动清理30天前的备份
+find /var/backups/docker -type d -mtime +30 -exec rm -rf {} \;
+
+# 自动清理（在配置文件中设置）
+BACKUP_RETENTION_DAYS=30
+```
+
+### 验证备份完整性
+```bash
+# 启用备份验证
+RUN_BACKUP_VERIFICATION=true
+GENERATE_CHECKSUMS=true
+CHECKSUM_ALGORITHM="sha256"
+```
+
+### 性能优化
+```bash
+# 调整并发数量
+MAX_CONCURRENT_BACKUPS=3
+
+# 使用更快的压缩算法
+COMPRESSION_FORMAT="gzip"  # 最快
+# COMPRESSION_FORMAT="xz"  # 最小文件
+```
+
+## 📞 支持和贡献
+
+### 获取帮助
+- 查看内置帮助：`./docker-backup.sh --help`
+- 检查配置文件：`backup.conf`
+- 查看示例：`examples/` 目录
+
+### 报告问题
+如果遇到问题，请提供以下信息：
+1. 操作系统版本
+2. Docker版本
+3. 错误信息和日志
+4. 使用的命令和配置
+
+### 贡献代码
+欢迎提交Pull Request，请确保：
+1. 代码遵循现有风格
+2. 添加适当的注释
+3. 更新相关文档
+4. 测试新功能
+
+## 📝 版本历史
+
+### v1.0.0
+- 初始版本发布
+- 支持完整的容器备份和恢复
+- 包含配置文件和命令行选项
+- 支持数据卷和挂载点备份
+- 提供详细的使用文档
+
+## 📄 许可证
+
+本项目采用MIT许可证，详见LICENSE文件。
+
+---
+
+**免责声明**：在生产环境使用前，请务必在测试环境中验证备份和恢复流程。定期测试备份的完整性和可恢复性。 
