@@ -318,7 +318,7 @@ create_restore_script() {
     
     log_info "创建恢复脚本..."
     
-    cat > "${backup_dir}/restore.sh" << 'EOF'
+    cat > "${backup_dir}/restore.sh" << EOF
 #!/bin/bash
 
 # Docker容器恢复脚本
@@ -326,78 +326,242 @@ create_restore_script() {
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER_NAME=$(basename "$(dirname "${SCRIPT_DIR}")" | sed 's/_[0-9]*$//')
+# 颜色定义
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
 
-echo "开始恢复容器: ${CONTAINER_NAME}"
+log_info() { echo -e "\${BLUE}[INFO]\${NC} \$1"; }
+log_success() { echo -e "\${GREEN}[SUCCESS]\${NC} \$1"; }
+log_warning() { echo -e "\${YELLOW}[WARNING]\${NC} \$1"; }
+log_error() { echo -e "\${RED}[ERROR]\${NC} \$1" >&2; }
+
+# 脚本目录和容器名称
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+CONTAINER_NAME="${container_name}"
+CONFIG_FILE="\${SCRIPT_DIR}/config/container_inspect.json"
+
+log_info "开始恢复容器: \${CONTAINER_NAME}"
+
+# 检查必需文件
+if [[ ! -f "\${CONFIG_FILE}" ]]; then
+    log_error "配置文件不存在: \${CONFIG_FILE}"
+    exit 1
+fi
+
+# 检查jq工具
+if ! command -v jq >/dev/null 2>&1; then
+    log_error "需要安装jq工具来解析配置文件"
+    exit 1
+fi
 
 # 检查Docker是否运行
 if ! docker info >/dev/null 2>&1; then
-    echo "错误: Docker未运行或无法访问"
+    log_error "Docker未运行或无法访问"
     exit 1
 fi
 
 # 停止并删除现有容器（如果存在）
-if docker ps -a --format "{{.Names}}" | grep -q "^${CONTAINER_NAME}$"; then
-    echo "停止并删除现有容器..."
-    docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-    docker rm "${CONTAINER_NAME}" 2>/dev/null || true
+if docker ps -a --format "{{.Names}}" | grep -q "^\${CONTAINER_NAME}\$"; then
+    log_warning "发现现有容器，正在停止并删除..."
+    docker stop "\${CONTAINER_NAME}" 2>/dev/null || true
+    docker rm "\${CONTAINER_NAME}" 2>/dev/null || true
+    log_info "现有容器已删除"
 fi
 
 # 恢复镜像（如果存在）
-if [[ -f "${SCRIPT_DIR}/${CONTAINER_NAME}_image.tar.gz" ]]; then
-    echo "恢复Docker镜像..."
-    gunzip -c "${SCRIPT_DIR}/${CONTAINER_NAME}_image.tar.gz" | docker load
+if [[ -f "\${SCRIPT_DIR}/\${CONTAINER_NAME}_image.tar.gz" ]]; then
+    log_info "恢复Docker镜像..."
+    if gunzip -c "\${SCRIPT_DIR}/\${CONTAINER_NAME}_image.tar.gz" | docker load; then
+        log_success "镜像恢复成功"
+    else
+        log_warning "镜像恢复失败，将尝试从远程拉取"
+    fi
 fi
 
 # 恢复数据卷
-if [[ -d "${SCRIPT_DIR}/volumes" ]]; then
-    echo "恢复数据卷..."
-    for volume_file in "${SCRIPT_DIR}/volumes"/*.tar.gz; do
-        if [[ -f "${volume_file}" ]]; then
-            volume_name=$(basename "${volume_file}" .tar.gz)
-            echo "  恢复数据卷: ${volume_name}"
+if [[ -d "\${SCRIPT_DIR}/volumes" ]]; then
+    log_info "恢复数据卷..."
+    for volume_file in "\${SCRIPT_DIR}/volumes"/*.tar.gz; do
+        if [[ -f "\${volume_file}" ]]; then
+            volume_name=\$(basename "\${volume_file}" .tar.gz)
+            log_info "  恢复数据卷: \${volume_name}"
             
             # 创建数据卷
-            docker volume create "${volume_name}" >/dev/null 2>&1 || true
+            docker volume create "\${volume_name}" >/dev/null 2>&1 || true
             
             # 恢复数据
-            docker run --rm -v "${volume_name}:/data" -v "${SCRIPT_DIR}/volumes:/backup" \
-                alpine:latest tar -xzf "/backup/${volume_name}.tar.gz" -C /data
+            if docker run --rm -v "\${volume_name}:/data" -v "\${SCRIPT_DIR}/volumes:/backup" \
+                alpine:latest tar -xzf "/backup/\${volume_name}.tar.gz" -C /data 2>/dev/null; then
+                log_success "  数据卷 '\${volume_name}' 恢复成功"
+            else
+                log_warning "  数据卷 '\${volume_name}' 恢复失败"
+            fi
         fi
     done
 fi
 
 # 恢复挂载点
-if [[ -d "${SCRIPT_DIR}/mounts" ]]; then
-    echo "恢复挂载点..."
-    for mount_dir in "${SCRIPT_DIR}/mounts"/mount_*; do
-        if [[ -d "${mount_dir}" ]]; then
-            mount_info="${mount_dir}/mount_info.json"
-            if [[ -f "${mount_info}" ]]; then
-                source_path=$(jq -r '.Source' "${mount_info}")
+if [[ -d "\${SCRIPT_DIR}/mounts" ]]; then
+    log_info "恢复挂载点..."
+    for mount_dir in "\${SCRIPT_DIR}/mounts"/mount_*; do
+        if [[ -d "\${mount_dir}" ]]; then
+            mount_info="\${mount_dir}/mount_info.json"
+            if [[ -f "\${mount_info}" ]]; then
+                source_path=\$(jq -r '.Source' "\${mount_info}" 2>/dev/null || echo "")
+                destination=\$(jq -r '.Destination' "\${mount_info}" 2>/dev/null || echo "")
                 
-                echo "  恢复挂载点: ${source_path}"
-                
-                # 创建目录结构
-                mkdir -p "$(dirname "${source_path}")"
-                
-                # 恢复数据
-                if [[ -f "${mount_dir}/data.tar.gz" ]]; then
-                    tar -xzf "${mount_dir}/data.tar.gz" -C "$(dirname "${source_path}")"
-                elif [[ -f "${mount_dir}/data.file" ]]; then
-                    cp "${mount_dir}/data.file" "${source_path}"
+                if [[ -n "\${source_path}" ]]; then
+                    log_info "  恢复挂载点: \${source_path} -> \${destination}"
+                    
+                    # 创建目录结构
+                    mkdir -p "\$(dirname "\${source_path}")"
+                    
+                    # 恢复数据
+                    if [[ -f "\${mount_dir}/data.tar.gz" ]]; then
+                        if tar -xzf "\${mount_dir}/data.tar.gz" -C "\$(dirname "\${source_path}")" 2>/dev/null; then
+                            log_success "  挂载点数据恢复成功: \${source_path}"
+                        else
+                            log_warning "  挂载点数据恢复失败: \${source_path}"
+                        fi
+                    elif [[ -f "\${mount_dir}/data.file" ]]; then
+                        if cp "\${mount_dir}/data.file" "\${source_path}" 2>/dev/null; then
+                            log_success "  挂载点文件恢复成功: \${source_path}"
+                        else
+                            log_warning "  挂载点文件恢复失败: \${source_path}"
+                        fi
+                    fi
                 fi
             fi
         fi
     done
 fi
 
-echo "数据恢复完成"
-echo "请使用以下命令检查配置并手动启动容器:"
-echo "  docker inspect \$(cat ${SCRIPT_DIR}/config/container_inspect.json | jq -r '.[0].Config')"
-echo "或参考 ${SCRIPT_DIR}/config/ 目录中的配置文件"
+# 解析容器配置并重建容器
+log_info "解析容器配置并重建容器..."
 
+# 获取镜像名称
+IMAGE=\$(jq -r '.[0].Config.Image' "\${CONFIG_FILE}")
+if [[ "\${IMAGE}" == "null" || -z "\${IMAGE}" ]]; then
+    log_error "无法获取镜像名称"
+    exit 1
+fi
+
+log_info "容器镜像: \${IMAGE}"
+
+# 尝试拉取镜像（如果本地没有）
+if ! docker image inspect "\${IMAGE}" >/dev/null 2>&1; then
+    log_info "本地镜像不存在，尝试拉取: \${IMAGE}"
+    if docker pull "\${IMAGE}"; then
+        log_success "镜像拉取成功"
+    else
+        log_error "无法拉取镜像: \${IMAGE}"
+        exit 1
+    fi
+fi
+
+# 构建docker run命令
+log_info "构建容器运行命令..."
+DOCKER_CMD="docker run -d --name \${CONTAINER_NAME}"
+
+# 添加端口映射
+PORTS=\$(jq -r '.[0].NetworkSettings.Ports // {} | to_entries[] | select(.value != null) | "\(.key):\(.value[0].HostPort // "")"' "\${CONFIG_FILE}" 2>/dev/null || true)
+if [[ -n "\${PORTS}" ]]; then
+    while IFS= read -r port_mapping; do
+        if [[ -n "\${port_mapping}" ]]; then
+            container_port=\$(echo "\${port_mapping}" | cut -d: -f1)
+            host_port=\$(echo "\${port_mapping}" | cut -d: -f2)
+            if [[ -n "\${host_port}" && "\${host_port}" != "null" ]]; then
+                DOCKER_CMD="\${DOCKER_CMD} -p \${host_port}:\${container_port}"
+                log_info "  添加端口映射: \${host_port}:\${container_port}"
+            fi
+        fi
+    done <<< "\${PORTS}"
+fi
+
+# 添加环境变量
+ENV_VARS=\$(jq -r '.[0].Config.Env[]?' "\${CONFIG_FILE}" 2>/dev/null || true)
+if [[ -n "\${ENV_VARS}" ]]; then
+    while IFS= read -r env_var; do
+        if [[ -n "\${env_var}" ]]; then
+            DOCKER_CMD="\${DOCKER_CMD} -e '\${env_var}'"
+            log_info "  添加环境变量: \${env_var}"
+        fi
+    done <<< "\${ENV_VARS}"
+fi
+
+# 添加挂载点
+MOUNTS=\$(jq -c '.[0].Mounts[]?' "\${CONFIG_FILE}" 2>/dev/null || true)
+if [[ -n "\${MOUNTS}" ]]; then
+    while IFS= read -r mount_info; do
+        if [[ -n "\${mount_info}" ]]; then
+            mount_type=\$(echo "\${mount_info}" | jq -r '.Type' 2>/dev/null || echo "")
+            source=\$(echo "\${mount_info}" | jq -r '.Source' 2>/dev/null || echo "")
+            destination=\$(echo "\${mount_info}" | jq -r '.Destination' 2>/dev/null || echo "")
+            
+            if [[ "\${mount_type}" == "bind" && -n "\${source}" && -n "\${destination}" ]]; then
+                DOCKER_CMD="\${DOCKER_CMD} -v \${source}:\${destination}"
+                log_info "  添加绑定挂载: \${source}:\${destination}"
+            elif [[ "\${mount_type}" == "volume" ]]; then
+                volume_name=\$(echo "\${mount_info}" | jq -r '.Name' 2>/dev/null || echo "")
+                if [[ -n "\${volume_name}" && -n "\${destination}" ]]; then
+                    DOCKER_CMD="\${DOCKER_CMD} -v \${volume_name}:\${destination}"
+                    log_info "  添加数据卷: \${volume_name}:\${destination}"
+                fi
+            fi
+        fi
+    done <<< "\${MOUNTS}"
+fi
+
+# 添加工作目录
+WORKDIR=\$(jq -r '.[0].Config.WorkingDir' "\${CONFIG_FILE}" 2>/dev/null || echo "")
+if [[ -n "\${WORKDIR}" && "\${WORKDIR}" != "null" ]]; then
+    DOCKER_CMD="\${DOCKER_CMD} -w \${WORKDIR}"
+    log_info "  设置工作目录: \${WORKDIR}"
+fi
+
+# 添加镜像
+DOCKER_CMD="\${DOCKER_CMD} \${IMAGE}"
+
+# 添加启动命令
+CMD=\$(jq -r '.[0].Config.Cmd[]?' "\${CONFIG_FILE}" 2>/dev/null | tr '\n' ' ' || echo "")
+if [[ -n "\${CMD}" ]]; then
+    DOCKER_CMD="\${DOCKER_CMD} \${CMD}"
+    log_info "  添加启动命令: \${CMD}"
+fi
+
+# 保存命令到文件
+echo "\${DOCKER_CMD}" > "\${SCRIPT_DIR}/docker_run_command.sh"
+chmod +x "\${SCRIPT_DIR}/docker_run_command.sh"
+
+log_info "Docker运行命令已保存到: \${SCRIPT_DIR}/docker_run_command.sh"
+log_info "执行命令: \${DOCKER_CMD}"
+
+# 执行容器创建
+log_info "正在启动容器..."
+if eval "\${DOCKER_CMD}"; then
+    log_success "容器启动成功: \${CONTAINER_NAME}"
+    
+    # 等待容器启动
+    sleep 3
+    
+    # 检查容器状态
+    if docker ps --format "{{.Names}}" | grep -q "^\${CONTAINER_NAME}\$"; then
+        log_success "容器正在运行"
+        docker ps --filter "name=\${CONTAINER_NAME}" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+    else
+        log_warning "容器可能未正常启动，请检查日志"
+        log_info "查看日志: docker logs \${CONTAINER_NAME}"
+    fi
+else
+    log_error "容器启动失败"
+    log_info "请检查生成的命令: \${SCRIPT_DIR}/docker_run_command.sh"
+    exit 1
+fi
+
+log_success "容器恢复完成！"
 EOF
 
     chmod +x "${backup_dir}/restore.sh"
