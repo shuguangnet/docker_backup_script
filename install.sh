@@ -206,7 +206,7 @@ install_files() {
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
     
- # GitHub仓库基础URL
+    # GitHub仓库基础URL
     local GITHUB_RAW_URL="https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main"
     
     # 下载必要文件
