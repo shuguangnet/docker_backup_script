@@ -211,11 +211,17 @@ backup_mounts() {
             
             # 备份数据
             if [[ -d "${source}" ]]; then
-                tar -czf "${mount_backup_dir}/data.tar.gz" -C "$(dirname "${source}")" "$(basename "${source}")" 2>/dev/null || {
+                if tar -czf "${mount_backup_dir}/data.tar.gz" -C "$(dirname "${source}")" "$(basename "${source}")" 2>/dev/null; then
+                    log_debug "成功备份挂载点目录: ${source}"
+                else
                     log_warning "无法备份目录: ${source}"
-                }
+                fi
             elif [[ -f "${source}" ]]; then
-                cp "${source}" "${mount_backup_dir}/data.file"
+                if cp "${source}" "${mount_backup_dir}/data.file"; then
+                    log_debug "成功备份挂载点文件: ${source}"
+                else
+                    log_warning "无法备份文件: ${source}"
+                fi
             fi
             
             ((mount_index++))
@@ -246,10 +252,12 @@ backup_volumes() {
             local volume_backup_file="${backup_dir}/volumes/${volume}.tar.gz"
             
             # 使用临时容器备份数据卷
-            docker run --rm -v "${volume}:/data" -v "${backup_dir}/volumes:/backup" \
-                alpine:latest tar -czf "/backup/${volume}.tar.gz" -C /data . 2>/dev/null || {
+            if docker run --rm -v "${volume}:/data" -v "${backup_dir}/volumes:/backup" \
+                alpine:latest tar -czf "/backup/${volume}.tar.gz" -C /data . 2>/dev/null; then
+                log_debug "成功备份数据卷: ${volume}"
+            else
                 log_warning "无法备份数据卷: ${volume}"
-            }
+            fi
             
             # 保存数据卷信息
             docker volume inspect "${volume}" > "${backup_dir}/volumes/${volume}_info.json" 2>/dev/null || true
@@ -504,8 +512,10 @@ main() {
     local total_count=${#containers_to_backup[@]}
     
     for container in "${containers_to_backup[@]}"; do
+        log_info "正在处理容器 $((success_count + 1))/$total_count: $container"
         if backup_container "${container}"; then
             ((success_count++))
+            log_info "容器 '$container' 备份成功 ($success_count/$total_count)"
         else
             log_error "备份容器 '${container}' 失败"
         fi
