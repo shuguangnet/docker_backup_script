@@ -260,7 +260,11 @@ backup_volumes() {
             fi
             
             # 保存数据卷信息
-            docker volume inspect "${volume}" > "${backup_dir}/volumes/${volume}_info.json" 2>/dev/null || true
+            if docker volume inspect "${volume}" > "${backup_dir}/volumes/${volume}_info.json" 2>/dev/null; then
+                log_debug "保存数据卷信息: ${volume}"
+            else
+                log_warning "无法保存数据卷信息: ${volume}"
+            fi
         done
     else
         log_info "  未发现数据卷"
@@ -298,7 +302,11 @@ backup_logs() {
     log_info "收集容器 '${container_name}' 的日志..."
     
     # 获取容器日志（最近1000行）
-    docker logs --tail 1000 "${container_name}" > "${backup_dir}/logs/container.log" 2>&1 || true
+    if docker logs --tail 1000 "${container_name}" > "${backup_dir}/logs/container.log" 2>&1; then
+        log_debug "成功收集日志: ${container_name}"
+    else
+        log_warning "无法收集日志: ${container_name}"
+    fi
     
     log_success "日志收集完成"
 }
@@ -421,7 +429,7 @@ $([ "${FULL_BACKUP}" == true ] && echo "- 容器镜像 ✓" || echo "- 容器镜
 2. 执行 ./restore.sh 脚本恢复数据
 3. 参考 config/ 目录中的配置手动创建容器
 
-备份大小: $(du -sh "${backup_dir}" | cut -f1)
+备份大小: $(du -sh "${backup_dir}" 2>/dev/null | cut -f1 || echo "计算中...")
 EOF
 }
 
@@ -450,6 +458,7 @@ backup_container() {
     create_backup_summary "${container_backup_dir}" "${container_name}"
     
     log_success "容器 '${container_name}' 备份完成: ${container_backup_dir}"
+    log_debug "备份函数正常返回，准备处理下一个容器"
     
     return 0
 }
