@@ -206,12 +206,27 @@ install_files() {
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
     
-    # 复制脚本文件
-    cp docker-backup.sh "$INSTALL_DIR/"
-    cp docker-restore.sh "$INSTALL_DIR/"
-    cp backup-utils.sh "$INSTALL_DIR/"
-    cp backup.conf "$INSTALL_DIR/"
-    cp README.md "$INSTALL_DIR/"
+ # GitHub仓库基础URL
+    local GITHUB_RAW_URL="https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main"
+    
+    # 下载必要文件
+    log_info "从GitHub下载文件..."
+    
+    local files=(
+        "docker-backup.sh"
+        "docker-restore.sh" 
+        "backup-utils.sh"
+        "backup.conf"
+        "README.md"
+    )
+    
+    for file in "${files[@]}"; do
+        log_info "  下载: $file"
+        if ! curl -fsSL "$GITHUB_RAW_URL/$file" -o "$INSTALL_DIR/$file"; then
+            log_error "下载失败: $file"
+            exit 1
+        fi
+    done
     
     # 设置权限
     chmod +x "$INSTALL_DIR"/*.sh
