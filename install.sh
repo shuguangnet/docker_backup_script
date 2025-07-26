@@ -216,6 +216,8 @@ install_files() {
         "docker-backup.sh"
         "docker-restore.sh" 
         "backup-utils.sh"
+        "docker-backup-menu.sh"
+        "docker-cleanup.sh"
         "backup.conf"
         "README.md"
     )
@@ -402,21 +404,39 @@ cd $INSTALL_DIR
 exec ./docker-backup.sh -c $INSTALL_DIR/backup.conf.local "\$@"
 EOF
     
-    # 创建恢复命令
+        # 创建恢复命令
     cat > /usr/local/bin/docker-restore << EOF
 #!/bin/bash
 cd $INSTALL_DIR
 exec ./docker-restore.sh "\$@"
 EOF
-    
+
+    # 创建菜单命令
+    cat > /usr/local/bin/docker-backup-menu << EOF
+#!/bin/bash
+cd $INSTALL_DIR
+exec ./docker-backup-menu.sh "\$@"
+EOF
+
+    # 创建清理命令
+    cat > /usr/local/bin/docker-cleanup << EOF
+#!/bin/bash
+cd $INSTALL_DIR
+exec ./docker-cleanup.sh "\$@"
+EOF
+
     chmod +x /usr/local/bin/docker-backup
     chmod +x /usr/local/bin/docker-restore
+    chmod +x /usr/local/bin/docker-backup-menu
+    chmod +x /usr/local/bin/docker-cleanup
     
     log_success "快捷命令创建完成"
     log_info "现在可以使用以下命令："
     log_info "  docker-backup -a              # 备份所有容器"
     log_info "  docker-backup nginx mysql     # 备份指定容器"
     log_info "  docker-restore /path/to/backup # 恢复容器"
+    log_info "  docker-backup-menu            # 交互式菜单"
+    log_info "  docker-cleanup 30             # 清理30天前的备份"
 }
 
 # 运行测试

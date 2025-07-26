@@ -11,6 +11,36 @@ curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/ma
 
 **GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
 
+
+
+
+
+**就是这么简单！** 🎉
+
+备份
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da1341465.jpg)
+
+恢复
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da159e26a.jpg)
+
+定时备份
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884db36378d6.png)
+
+
+
+## 🖥️ 交互式菜单
+
+安装完成后，你可以使用交互式菜单进行所有操作：
+
+```bash
+# 启动交互式菜单
+docker-backup-menu
+```
+
+
+
+**就是这么简单！** 🎉
+
 ## 🚀 功能特性
 
 ### 核心功能
@@ -19,6 +49,7 @@ curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/ma
 - **镜像备份**：可选择性备份容器镜像（完整备份模式）
 - **一键恢复**：在新服务器上快速恢复容器和数据
 - **增量支持**：智能识别和备份变更的数据
+- **交互式菜单**：图形化操作界面，新手友好
 
 ### 高级特性
 - **灵活配置**：支持配置文件和命令行参数
@@ -28,6 +59,8 @@ curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/ma
 - **安全加密**：支持GPG加密备份文件
 - **远程存储**：支持备份到远程服务器
 - **通知机制**：支持邮件、Webhook、Slack通知
+- **定时备份**：支持cron定时任务自动备份
+- **智能清理**：自动清理过期备份文件
 
 ## 📋 系统要求
 
@@ -164,6 +197,12 @@ sudo chown $(whoami):$(whoami) /var/backups/docker
 
 如果你使用了一键安装脚本，系统会自动创建全局快捷命令：
 
+#### 交互式菜单（推荐新手）
+```bash
+# 启动交互式菜单
+docker-backup-menu
+```
+
 #### 备份操作
 ```bash
 # 备份单个容器
@@ -174,6 +213,9 @@ docker-backup nginx mysql redis
 
 # 备份所有运行中的容器
 docker-backup -a
+
+# 备份所有容器（排除镜像，节省空间）
+docker-backup -a --exclude-images
 
 # 完整备份（包含镜像）
 docker-backup -f nginx
@@ -207,6 +249,12 @@ journalctl -u docker-backup.service
 
 # 手动触发备份
 systemctl start docker-backup.service
+
+# 清理旧备份文件
+docker-cleanup 30
+
+# 查看备份统计
+docker-cleanup --preview 30
 ```
 
 ### 📋 手动模式（脚本直接使用）
@@ -268,6 +316,46 @@ systemctl start docker-backup.service
 # 跳过特定组件恢复
 ./docker-restore.sh --no-volumes --no-mounts /path/to/backup/nginx_20231201_120000
 ```
+
+## 🖥️ 交互式菜单详解
+
+### 菜单功能概览
+
+运行 `docker-backup-menu` 后，你将看到一个包含18个选项的交互式菜单：
+
+#### 📦 备份操作 (选项1-6)
+- **选项1**: 备份所有运行中的容器
+- **选项2**: 备份所有容器（排除镜像）
+- **选项3**: 备份所有容器（排除数据卷）
+- **选项4**: 备份所有容器（排除挂载点）
+- **选项5**: 备份所有容器（仅配置和日志）
+- **选项6**: 完整备份所有容器（包含镜像）
+
+#### 🎯 指定容器备份 (选项7-10)
+- **选项7**: 备份指定容器
+- **选项8**: 备份指定容器（排除镜像）
+- **选项9**: 备份指定容器（排除数据卷）
+- **选项10**: 备份指定容器（排除挂载点）
+
+#### 🔄 恢复操作 (选项11-12)
+- **选项11**: 恢复容器（交互式向导）
+- **选项12**: 列出可恢复的备份
+
+#### 🧹 维护操作 (选项13-15)
+- **选项13**: 清理旧备份文件
+- **选项14**: 查看备份统计信息
+- **选项15**: 检查系统状态
+
+#### ⚙️ 配置和帮助 (选项16-18)
+- **选项16**: 编辑配置文件
+- **选项17**: 查看帮助信息
+- **选项18**: 查看版本信息
+
+### 菜单使用示例
+
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da1341465.jpg)
+
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da159e26a.jpg)
 
 ## ⚙️ 配置选项
 
@@ -369,19 +457,57 @@ ssh user@new-server "cd /tmp && ./docker-restore.sh nginx_20231201_120000"
 
 ### 场景2：定期自动备份
 
+#### 方法1：使用系统服务（推荐）
+```bash
+# 启用定时备份服务
+sudo systemctl enable docker-backup.timer
+sudo systemctl start docker-backup.timer
+
+# 查看服务状态
+sudo systemctl status docker-backup.timer
+```
+
+#### 方法2：自定义cron任务
 ```bash
 # 创建定时任务脚本
 cat > /usr/local/bin/docker-auto-backup.sh << 'EOF'
 #!/bin/bash
 cd /opt/docker-backup
-./docker-backup.sh -a -o /var/backups/docker
-find /var/backups/docker -type d -mtime +7 -exec rm -rf {} \;
+./docker-backup.sh -a --exclude-images -o /var/backups/docker
+docker-cleanup 30  # 清理30天前的备份
 EOF
 
 chmod +x /usr/local/bin/docker-auto-backup.sh
 
 # 添加crontab任务（每天凌晨2点备份）
 echo "0 2 * * * /usr/local/bin/docker-auto-backup.sh" | sudo crontab -
+```
+
+#### 方法3：rsync同步到远程存储
+```bash
+# 创建备份同步脚本
+cat > /usr/local/bin/docker-backup-sync.sh << 'EOF'
+#!/bin/bash
+BACKUP_DIR="/var/backups/docker"
+REMOTE_HOST="backup-server.company.com"
+REMOTE_USER="backup"
+REMOTE_PATH="/backups/docker"
+
+# 执行备份
+cd /opt/docker-backup
+./docker-backup.sh -a --exclude-images -o $BACKUP_DIR
+
+# 同步到远程服务器
+rsync -avz --delete $BACKUP_DIR/ $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/
+
+# 清理本地旧备份
+docker-cleanup 7  # 保留7天本地备份
+EOF
+
+chmod +x /usr/local/bin/docker-backup-sync.sh
+
+# 添加到crontab（每天凌晨3点备份并同步）
+echo "0 3 * * * /usr/local/bin/docker-backup-sync.sh" | sudo crontab -
 ```
 
 ### 场景3：生产环境迁移
@@ -555,10 +681,70 @@ WEBHOOK_TIMEOUT=30
 
 ## 🔄 定期维护
 
+### 定时备份最佳实践
+
+#### 1. 设置定时备份
+```bash
+# 启用系统定时服务
+sudo systemctl enable docker-backup.timer
+sudo systemctl start docker-backup.timer
+
+# 查看下次执行时间
+sudo systemctl list-timers docker-backup.timer
+```
+
+#### 2. 配置rsync同步
+```bash
+# 设置SSH密钥认证
+ssh-keygen -t rsa -b 4096 -f ~/.ssh/backup_key
+ssh-copy-id -i ~/.ssh/backup_key.pub backup@backup-server
+
+# 创建同步脚本
+cat > /usr/local/bin/docker-backup-sync.sh << 'EOF'
+#!/bin/bash
+BACKUP_DIR="/var/backups/docker"
+REMOTE_HOST="backup-server.company.com"
+REMOTE_USER="backup"
+REMOTE_PATH="/backups/docker"
+SSH_KEY="~/.ssh/backup_key"
+
+# 执行备份
+cd /opt/docker-backup
+./docker-backup.sh -a --exclude-images -o $BACKUP_DIR
+
+# 同步到远程服务器
+rsync -avz --delete -e "ssh -i $SSH_KEY" $BACKUP_DIR/ $REMOTE_USER@$REMOTE_HOST:$REMOTE_PATH/
+
+# 清理本地旧备份
+docker-cleanup 7  # 保留7天本地备份
+
+# 发送通知
+echo "Docker backup completed at $(date)" | mail -s "Backup Status" admin@company.com
+EOF
+
+chmod +x /usr/local/bin/docker-backup-sync.sh
+```
+
+#### 3. 添加到crontab
+```bash
+# 编辑crontab
+crontab -e
+
+# 添加以下内容
+# 每天凌晨2点执行备份
+0 2 * * * /usr/local/bin/docker-backup-sync.sh
+
+# 每周日凌晨3点清理远程旧备份
+0 3 * * 0 ssh backup@backup-server "find /backups/docker -type d -mtime +30 -exec rm -rf {} \;"
+```
+
 ### 清理旧备份
 ```bash
 # 手动清理30天前的备份
 find /var/backups/docker -type d -mtime +30 -exec rm -rf {} \;
+
+# 使用清理工具
+docker-cleanup 30
 
 # 自动清理（在配置文件中设置）
 BACKUP_RETENTION_DAYS=30
@@ -596,7 +782,9 @@ COMPRESSION_FORMAT="gzip"  # 最快
 curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
 
 # 立即使用
-docker-backup -a  # 备份所有容器
+docker-backup-menu  # 启动交互式菜单
+docker-backup -a    # 备份所有容器
+docker-cleanup 30   # 清理30天前的备份
 ```
 
 ### 获取帮助
