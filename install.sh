@@ -635,6 +635,7 @@ main() {
 }
 
 # 脚本入口点
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+# 兼容管道执行方式 (curl | bash)
+if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]] || [[ -z "${BASH_SOURCE[0]:-}" ]]; then
     main "$@"
 fi 
