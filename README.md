@@ -7,10 +7,6 @@
 ```bash
 # 立即安装使用
 curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
-
-# 安装后即可使用
-docker-backup -a              # 备份所有容器
-docker-restore /path/to/backup # 恢复容器
 ```
 
 **GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
