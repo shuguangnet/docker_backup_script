@@ -180,6 +180,10 @@ docker-backup -f nginx
 
 # 详细输出模式
 docker-backup -v nginx
+
+# 备份所有运行中的容器（排除镜像）
+PS：排除镜像也可以在backup.conf进行配置
+docker-backup --exclude-images -a
 ```
 
 #### 恢复操作
