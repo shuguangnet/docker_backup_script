@@ -2,6 +2,19 @@
 
 一个功能完整的Docker容器备份和恢复解决方案，专为Linux系统设计，能够自动识别并备份Docker容器的完整配置、挂载点和数据卷，支持在新服务器上一键恢复。
 
+## 🚀 一键安装
+
+```bash
+# 立即安装使用
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+
+# 安装后即可使用
+docker-backup -a              # 备份所有容器
+docker-restore /path/to/backup # 恢复容器
+```
+
+**GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
+
 ## 🚀 功能特性
 
 ### 核心功能
@@ -54,34 +67,96 @@ apk add jq curl tar rsync gnupg
 
 ## 🛠️ 安装部署
 
-### 1. 下载脚本
-```bash
-# 克隆或下载脚本文件
-git clone <repository-url>
-cd docker-backup
+### 🚀 一键安装（推荐）
 
-# 或者直接下载脚本文件
-wget <download-url>/docker-backup.sh
-wget <download-url>/docker-restore.sh
-wget <download-url>/backup-utils.sh
-wget <download-url>/backup.conf
+#### 方法1：直接下载并安装
+```bash
+# 一键下载并安装（推荐）
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+
+# 或者使用wget
+wget -qO- https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
 ```
 
-### 2. 设置权限
+#### 方法2：下载脚本后查看再执行（更安全）
+```bash
+# 下载安装脚本
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh -o install.sh
+
+# 查看脚本内容（确保安全）
+cat install.sh
+
+# 执行安装
+chmod +x install.sh
+sudo ./install.sh
+```
+
+#### 方法3：克隆整个仓库
+```bash
+# 克隆仓库
+git clone https://github.com/shuguangnet/dcoker_backup_script.git
+
+# 进入目录并安装
+cd dcoker_backup_script
+sudo ./install.sh
+```
+
+#### 安装选项
+```bash
+# 标准安装
+sudo ./install.sh
+
+# 自定义安装目录
+sudo ./install.sh -d /usr/local/docker-backup
+
+# 自定义备份目录
+sudo ./install.sh -b /backup/docker
+
+# 开发模式（使用当前目录，不需要sudo）
+./install.sh --dev-mode
+
+# 不创建系统服务
+sudo ./install.sh --no-service
+
+# 不设置定时任务
+sudo ./install.sh --no-cron
+
+# 卸载工具
+sudo ./install.sh --uninstall
+```
+
+### 📦 手动安装
+
+如果你需要手动安装或自定义部署：
+
+#### 1. 下载脚本
+```bash
+# 克隆仓库
+git clone https://github.com/shuguangnet/dcoker_backup_script.git
+cd dcoker_backup_script
+
+# 或者直接下载脚本文件
+wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/docker-backup.sh
+wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/docker-restore.sh
+wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/backup-utils.sh
+wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/backup.conf
+```
+
+#### 2. 设置权限
 ```bash
 chmod +x docker-backup.sh
 chmod +x docker-restore.sh
 chmod +x backup-utils.sh
 ```
 
-### 3. 配置文件
+#### 3. 配置文件
 ```bash
 # 复制并编辑配置文件
 cp backup.conf backup.conf.local
 vim backup.conf.local
 ```
 
-### 4. 创建备份目录
+#### 4. 创建备份目录
 ```bash
 sudo mkdir -p /var/backups/docker
 sudo chown $(whoami):$(whoami) /var/backups/docker
@@ -89,7 +164,58 @@ sudo chown $(whoami):$(whoami) /var/backups/docker
 
 ## 📖 使用指南
 
-### 基础备份操作
+### 🎯 快捷命令（一键安装后）
+
+如果你使用了一键安装脚本，系统会自动创建全局快捷命令：
+
+#### 备份操作
+```bash
+# 备份单个容器
+docker-backup nginx
+
+# 备份多个容器
+docker-backup nginx mysql redis
+
+# 备份所有运行中的容器
+docker-backup -a
+
+# 完整备份（包含镜像）
+docker-backup -f nginx
+
+# 详细输出模式
+docker-backup -v nginx
+```
+
+#### 恢复操作
+```bash
+# 恢复容器
+docker-restore /var/backups/docker/nginx_20231201_120000
+
+# 强制恢复（覆盖现有容器）
+docker-restore -f /var/backups/docker/nginx_20231201_120000
+
+# 恢复到新名称
+docker-restore --container-name new-nginx /var/backups/docker/nginx_20231201_120000
+```
+
+#### 管理命令
+```bash
+# 查看定时备份状态
+systemctl status docker-backup.timer
+
+# 启动定时备份
+systemctl start docker-backup.timer
+
+# 查看备份日志
+journalctl -u docker-backup.service
+
+# 手动触发备份
+systemctl start docker-backup.service
+```
+
+### 📋 手动模式（脚本直接使用）
+
+如果你是手动安装或开发模式：
 
 #### 备份单个容器
 ```bash
@@ -462,17 +588,35 @@ COMPRESSION_FORMAT="gzip"  # 最快
 
 ## 📞 支持和贡献
 
+### 🌟 项目信息
+- **GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
+- **主分支**: main
+- **许可证**: MIT License
+- **语言**: Bash Shell
+
+### 🚀 快速开始
+```bash
+# 一键安装
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+
+# 立即使用
+docker-backup -a  # 备份所有容器
+```
+
 ### 获取帮助
-- 查看内置帮助：`./docker-backup.sh --help`
+- 查看内置帮助：`docker-backup --help` 或 `./docker-backup.sh --help`
 - 检查配置文件：`backup.conf`
-- 查看示例：`examples/` 目录
+- 查看完整文档：[README.md](https://github.com/shuguangnet/dcoker_backup_script/blob/main/README.md)
+- 一键安装脚本：[install.sh](https://github.com/shuguangnet/dcoker_backup_script/blob/main/install.sh)
 
 ### 报告问题
-如果遇到问题，请提供以下信息：
+如果遇到问题，请在GitHub提交Issue并提供以下信息：
 1. 操作系统版本
 2. Docker版本
 3. 错误信息和日志
 4. 使用的命令和配置
+
+**GitHub Issues**: https://github.com/shuguangnet/dcoker_backup_script/issues
 
 ### 贡献代码
 欢迎提交Pull Request，请确保：
@@ -480,6 +624,8 @@ COMPRESSION_FORMAT="gzip"  # 最快
 2. 添加适当的注释
 3. 更新相关文档
 4. 测试新功能
+
+**GitHub Pull Requests**: https://github.com/shuguangnet/dcoker_backup_script/pulls
 
 ## 📝 版本历史
 
