@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/ma
 # 启动交互式菜单
 docker-backup-menu
 ```
-
+![Snipaste_2025-07-27_00-25-51.png](https://minio.933999.xyz/images-lankong/lankong/2025/07/27/688501a4020c2.png)
 
 
 **就是这么简单！** 🎉
@@ -351,11 +351,7 @@ docker-cleanup --preview 30
 - **选项17**: 查看帮助信息
 - **选项18**: 查看版本信息
 
-### 菜单使用示例
 
-![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da1341465.jpg)
-
-![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da159e26a.jpg)
 
 ## ⚙️ 配置选项
 
