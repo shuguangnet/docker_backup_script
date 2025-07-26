@@ -8,7 +8,12 @@
 # 立即安装使用
 curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
 ```
+可以设置cron定时备份，然后rsync同步到对应存储空间即可
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884db36378d6.png)
 
+**就是这么简单！** 🎉
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da1341465.jpg)
+![image](https://minio.933999.xyz/images-lankong/lankong/2025/07/26/6884da159e26a.jpg)
 **GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
 
 ## 🚀 功能特性
