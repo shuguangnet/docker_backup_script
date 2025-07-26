@@ -689,7 +689,7 @@ log_info "  停止服务: cd ${TEMP_COMPOSE_DIR} && docker-compose -f ${COMPOSE_
 COMPOSE_EOF
     else
         # 为普通容器创建恢复脚本
-        cat > "${backup_dir}/restore.sh" << 'EOF'
+        cat > "${backup_dir}/restore.sh" << EOF
 #!/bin/bash
 
 # Docker容器恢复脚本
@@ -934,6 +934,7 @@ fi
 
 log_success "容器恢复完成！"
 EOF
+    fi
 
     chmod +x "${backup_dir}/restore.sh"
     log_success "恢复脚本创建完成"
@@ -1125,8 +1126,12 @@ main() {
     mkdir -p "${BACKUP_DIR}"
     
     # 获取要备份的容器列表
-    local containers_to_backup
-    mapfile -t containers_to_backup < <(get_containers)
+    local containers_to_backup=()
+    while IFS= read -r container; do
+        if [[ -n "$container" ]]; then
+            containers_to_backup+=("$container")
+        fi
+    done < <(get_containers)
     
     if [[ ${#containers_to_backup[@]} -eq 0 ]]; then
         log_warning "未找到要备份的容器"
