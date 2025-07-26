@@ -220,6 +220,7 @@ install_files() {
         "docker-cleanup.sh"
         "backup.conf"
         "README.md"
+        "test-compose-detection.sh"
     )
     
     for file in "${files[@]}"; do
