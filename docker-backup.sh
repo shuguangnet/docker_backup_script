@@ -537,7 +537,7 @@ main() {
     for container in "${containers_to_backup[@]}"; do
         log_info "正在处理容器 $((success_count + 1))/$total_count: $container"
         if backup_container "${container}"; then
-            ((success_count++))
+            success_count=$((success_count + 1))
             log_info "容器 '$container' 备份成功 ($success_count/$total_count)"
         else
             log_error "备份容器 '${container}' 失败"
