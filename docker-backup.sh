@@ -116,7 +116,7 @@ parse_arguments() {
 get_containers() {
     if [[ "${BACKUP_ALL}" == true ]]; then
         # 获取所有运行中的容器
-                local containers=$(docker ps --format "{{.Names}}" 2>/dev/null)
+        local containers=$(docker ps --format "{{.Names}}" 2>/dev/null)
         if [[ -n "$containers" ]]; then
             echo "$containers"
         else
@@ -485,6 +485,13 @@ main() {
     log_info "将备份 ${#containers_to_backup[@]} 个容器: ${containers_to_backup[*]}"
 
         
+    # 调试信息：显示每个容器
+    if [[ "$VERBOSE" == true ]]; then
+        for i in "${!containers_to_backup[@]}"; do
+            log_debug "容器 $((i+1)): '${containers_to_backup[i]}'"
+        done
+    fi
+    
     # 调试信息：显示每个容器
     if [[ "$VERBOSE" == true ]]; then
         for i in "${!containers_to_backup[@]}"; do
