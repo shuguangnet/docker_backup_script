@@ -409,6 +409,8 @@ create_backup_summary() {
     local backup_dir="$1"
     local container_name="$2"
     
+    log_info ">> 开始创建备份摘要: $container_name"
+    
     cat > "${backup_dir}/backup_summary.txt" << EOF
 Docker容器备份摘要
 ==================
@@ -431,6 +433,8 @@ $([ "${FULL_BACKUP}" == true ] && echo "- 容器镜像 ✓" || echo "- 容器镜
 
 备份大小: $(du -sh "${backup_dir}" 2>/dev/null | cut -f1 || echo "计算中...")
 EOF
+    
+    log_info ">> 备份摘要创建完成: $container_name"
 }
 
 # 备份单个容器
@@ -447,18 +451,37 @@ backup_container() {
     local container_backup_dir=$(create_backup_structure "${BACKUP_DIR}" "${container_name}")
     
     # 执行各项备份任务
+    log_info ">> 步骤1: 开始备份容器配置"
     backup_container_config "${container_name}" "${container_backup_dir}"
+    log_info ">> 步骤1完成: 容器配置备份完成"
+    
+    log_info ">> 步骤2: 开始备份挂载点"
     backup_mounts "${container_name}" "${container_backup_dir}"
+    log_info ">> 步骤2完成: 挂载点备份完成"
+    
+    log_info ">> 步骤3: 开始备份数据卷"
     backup_volumes "${container_name}" "${container_backup_dir}"
+    log_info ">> 步骤3完成: 数据卷备份完成"
+    
+    log_info ">> 步骤4: 开始备份镜像"
     backup_image "${container_name}" "${container_backup_dir}"
+    log_info ">> 步骤4完成: 镜像备份完成"
+    
+    log_info ">> 步骤5: 开始备份日志"
     backup_logs "${container_name}" "${container_backup_dir}"
+    log_info ">> 步骤5完成: 日志备份完成"
     
     # 创建恢复脚本和摘要
+    log_info ">> 步骤6: 开始创建恢复脚本"
     create_restore_script "${container_backup_dir}" "${container_name}"
+    log_info ">> 步骤6完成: 恢复脚本创建完成"
+    
+    log_info ">> 步骤7: 开始创建备份摘要"
     create_backup_summary "${container_backup_dir}" "${container_name}"
+    log_info ">> 步骤7完成: 备份摘要创建完成"
     
     log_success "容器 '${container_name}' 备份完成: ${container_backup_dir}"
-    log_debug "备份函数正常返回，准备处理下一个容器"
+    log_info ">> 备份函数正常返回，准备处理下一个容器"
     
     return 0
 }
@@ -500,21 +523,12 @@ main() {
     fi
     
     log_info "将备份 ${#containers_to_backup[@]} 个容器: ${containers_to_backup[*]}"
-
-        
-    # 调试信息：显示每个容器
-    if [[ "$VERBOSE" == true ]]; then
-        for i in "${!containers_to_backup[@]}"; do
-            log_debug "容器 $((i+1)): '${containers_to_backup[i]}'"
-        done
-    fi
     
-    # 调试信息：显示每个容器
-    if [[ "$VERBOSE" == true ]]; then
-        for i in "${!containers_to_backup[@]}"; do
-            log_debug "容器 $((i+1)): '${containers_to_backup[i]}'"
-        done
-    fi
+    # 显示容器列表详细信息
+    log_info "容器详细列表:"
+    for i in "${!containers_to_backup[@]}"; do
+        log_info "  [$((i+1))/${#containers_to_backup[@]}] ${containers_to_backup[i]}"
+    done
     
     # 备份每个容器
     local success_count=0
