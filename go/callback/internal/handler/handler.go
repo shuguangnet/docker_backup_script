@@ -87,5 +87,6 @@ func (h *BackupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.logger.Info("Backup script executed successfully", "output", string(output))
+
 	response.JSON(w, r, http.StatusOK, map[string]string{"message": "Backup initiated successfully", "output": string(output)})
 }

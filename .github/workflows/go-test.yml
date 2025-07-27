@@ -37,10 +37,7 @@ jobs:
         run: |
           echo "port=8080" > backup.conf
           echo "callback_secret=my-test-secret" >> backup.conf
-          echo "scriptpath=./test-script.sh" >> backup.conf
-          echo "#!/bin/bash" > test-script.sh
-          echo 'echo "script output"' >> test-script.sh
-          chmod +x test-script.sh
+          echo "scriptpath=./docker-backup.sh" >> backup.conf
 
       - name: Run integration test
         run: |
@@ -89,3 +86,23 @@ jobs:
       - name: Output application logs
         if: always()
         run: cat app.log
+
+      - name: List backup artifacts (if any)
+        if: always()
+        run: |
+          echo "=== Listing Docker backup artifacts ==="
+          # List directories that match the backup pattern created by docker-backup.sh
+          echo "Backup directories:"
+          ls -la /tmp/docker-backups/ 2>/dev/null || echo "No backup directory found at /tmp/docker-backups/"
+          
+          # If backup directories exist, show their contents
+          if [[ -d "/tmp/docker-backups" ]]; then
+            for backup_dir in /tmp/docker-backups/*/; do
+              if [[ -d "$backup_dir" ]]; then
+                echo "Contents of $backup_dir:"
+                ls -la "$backup_dir"
+                echo "---"
+              fi
+            done
+          fi
+          echo "=== End of Docker backup artifact listing ==="
