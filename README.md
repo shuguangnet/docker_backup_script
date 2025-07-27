@@ -51,6 +51,19 @@ docker-backup-menu
 - **增量支持**：智能识别和备份变更的数据
 - **交互式菜单**：图形化操作界面，新手友好
 - **Docker Compose支持**：自动检测并备份docker-compose项目
+- **HTTP回调API**：提供RESTful API接口，支持外部系统触发备份
+
+### 高级特性
+- **灵活配置**：支持配置文件和命令行参数
+- **批量操作**：支持备份所有容器或指定容器列表
+- **容器过滤**：支持按名称、标签等条件过滤容器
+- **并发备份**：支持多容器并发备份提高效率
+- **安全加密**：支持GPG加密备份文件
+- **远程存储**：支持备份到远程服务器
+- **通知机制**：支持邮件、Webhook、Slack通知
+- **定时备份**：支持cron定时任务自动备份
+- **智能清理**：自动清理过期备份文件
+- **API安全**：HMAC-SHA256签名验证，确保API调用安全
 
 ### 高级特性
 - **灵活配置**：支持配置文件和命令行参数
@@ -257,6 +270,69 @@ docker-cleanup 30
 # 查看备份统计
 docker-cleanup --preview 30
 ```
+
+### 🌐 HTTP回调API
+
+Docker备份工具提供了基于Go的HTTP回调API服务，支持外部系统通过RESTful接口触发备份操作。
+
+#### 启动回调服务
+```bash
+# 进入Go应用目录
+cd go/callback
+
+# 编译应用
+go build -o myapp .
+
+# 启动服务
+./myapp
+```
+
+#### 配置回调服务
+在 `backup.conf` 中添加以下配置：
+```bash
+# 回调服务配置
+port=8080
+callback_secret=your-secret-key
+scriptpath=./docker-backup.sh
+```
+
+#### API接口说明
+
+**端点**: `POST /backup`
+
+**请求头**:
+- `Content-Type: application/json`
+- `X-Signature: sha256=<hmac-signature>`
+
+**请求体**:
+```json
+{
+  "args": ["container-name1", "container-name2"]
+}
+```
+
+**示例调用**:
+```bash
+# 使用提供的客户端示例
+go run client_example.go nginx mysql
+
+# 或使用curl
+curl -X POST http://localhost:8080/backup \
+  -H "Content-Type: application/json" \
+  -H "X-Signature: sha256=<calculated-signature>" \
+  -d '{"args":["nginx"]}'
+```
+
+#### 安全特性
+- **HMAC-SHA256签名验证**：确保请求来源可信
+- **配置文件密钥管理**：密钥存储在配置文件中
+- **参数验证**：验证请求参数的有效性
+
+#### 使用场景
+- **CI/CD集成**：部署完成后自动触发备份
+- **监控系统**：检测到重要变更时触发备份
+- **外部调度器**：定时调用API进行备份
+- **多系统集成**：允许其他系统通过API触发备份
 
 ### 📋 手动模式（脚本直接使用）
 
@@ -868,9 +944,87 @@ docker-cleanup 30   # 清理30天前的备份
 
 **GitHub Pull Requests**: https://github.com/shuguangnet/dcoker_backup_script/pulls
 
+## 📁 项目结构
+
+```
+docker-backup/
+├── docker-backup.sh              # 主备份脚本
+├── docker-restore.sh             # 恢复脚本
+├── docker-backup-menu.sh         # 交互式菜单
+├── docker-cleanup.sh             # 清理工具
+├── backup-utils.sh               # 工具函数库
+├── backup.conf                   # 配置文件
+├── install.sh                    # 一键安装脚本
+├── README.md                     # 项目文档
+├── go/                           # Go语言应用目录
+│   └── callback/                 # HTTP回调API服务
+│       ├── main.go               # 主程序入口
+│       ├── client_example.go     # 客户端示例
+│       ├── WORKFLOW_zh-CN.md     # 工作流文档
+│       └── internal/             # 内部模块
+│           ├── config/           # 配置管理
+│           ├── handler/          # HTTP处理器
+│           ├── logger/           # 日志记录
+│           └── signature/        # 签名验证
+└── test-compose-detection*.sh    # 测试脚本
+```
+
+### 核心组件说明
+
+- **docker-backup.sh**: 主要的Docker容器备份脚本
+- **docker-restore.sh**: 容器恢复脚本
+- **docker-backup-menu.sh**: 交互式操作菜单
+- **docker-cleanup.sh**: 备份文件清理工具
+- **go/callback/**: 基于Go的HTTP回调API服务，支持外部系统触发备份
+
 ## 📝 版本历史
 
 ### v1.0.0
+
+🎉 **主要特性**:
+✅ 完整的Docker容器备份和恢复功能
+✅ 智能Docker Compose检测和备份
+✅ 交互式菜单操作界面
+✅ 定时备份和rsync同步支持
+✅ 排除镜像备份选项
+✅ 自动生成恢复脚本
+✅ **HTTP回调API服务** - 支持外部系统通过RESTful接口触发备份
+
+🔧 **技术改进**:
+• 增强的Docker Compose检测算法（6种检测方法）
+• 智能compose文件查找和备份
+• 改进的错误处理和日志记录
+• 兼容性优化（支持macOS和Linux）
+• 模块化代码结构
+• **基于Go的HTTP回调服务** - 提供安全的API接口
+
+📦 **备份内容**:
+• 容器配置信息
+• 挂载点数据
+• 数据卷
+• 容器日志
+• Docker Compose文件
+• 环境配置文件
+
+🚀 **新增功能**:
+• docker-backup-menu: 交互式菜单
+• docker-cleanup: 备份清理工具
+• 一键安装脚本
+• 定时备份配置
+• rsync同步脚本
+• **go/callback**: HTTP回调API服务
+
+🐛 **问题修复**:
+• 修复语法错误
+• 解决容器备份循环问题
+• 改进恢复脚本自动执行
+• 优化文件查找逻辑
+
+📚 **文档完善**:
+• 详细的使用说明
+• 快速开始指南
+• 论坛介绍帖子
+• 示例和最佳实践
 - 初始版本发布
 - 支持完整的容器备份和恢复
 - 包含配置文件和命令行选项
