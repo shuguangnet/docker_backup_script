@@ -37,10 +37,10 @@ jobs:
         run: |
           echo "port=8080" > backup.conf
           echo "callback_secret=my-test-secret" >> backup.conf
-          echo "scriptpath=../../test-script.sh" >> backup.conf
-          echo "#!/bin/bash" > ../../test-script.sh
-          echo 'echo "script output"' >> ../../test-script.sh
-          chmod +x ../../test-script.sh
+          echo "scriptpath=./test-script.sh" >> backup.conf
+          echo "#!/bin/bash" > test-script.sh
+          echo 'echo "script output"' >> test-script.sh
+          chmod +x test-script.sh
 
       - name: Run integration test
         run: |

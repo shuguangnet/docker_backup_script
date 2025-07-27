@@ -13,7 +13,7 @@ func Run(scriptPath string, args []string) ([]byte, error) {
 
 	// Execute the backup script with args
 	cmd := exec.Command("/bin/bash", cmdArgs...)
-	cmd.Dir = "../.." // Set working directory to project root
+	// cmd.Dir = "../.." // Set working directory to project root (commented out)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return output, fmt.Errorf("failed to execute backup script: %w\nOutput: %s", err, string(output))
