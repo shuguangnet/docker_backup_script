@@ -41,6 +41,11 @@ jobs:
 
       - name: Run integration test
         run: |
+          # Start a test container for backup
+          echo "Starting a test Docker container..."
+          docker run -d --name test-container nginx:alpine
+          echo "Test container started."
+
           # Start the callback handler application in the background
           nohup ./myapp > app.log 2>&1 &
 
@@ -55,11 +60,12 @@ jobs:
           done
 
           # Prepare and send a simulated external callback (POST request)
-          SIGNATURE=$(echo -n '{"args":[]}' | openssl dgst -sha256 -hmac "my-test-secret" | sed 's/^.* //')
+          # Include the test container name in the args
+          SIGNATURE=$(echo -n '{"args":["test-container"]}' | openssl dgst -sha256 -hmac "my-test-secret" | sed 's/^.* //')
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/backup \
               -H "Content-Type: application/json" \
               -H "X-Signature: sha256=$SIGNATURE" \
-              -d '{"args":[]}')
+              -d '{"args":["test-container"]}')
 
           # Extract response body and status code
           RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
@@ -69,12 +75,28 @@ jobs:
           if [ "$STATUS_CODE" != "200" ]; then
               echo "Test failed: Expected status code 200, got $STATUS_CODE"
               echo "Response: $RESPONSE_BODY"
+              # Output app logs for debugging
+              echo "=== App logs ==="
+              cat app.log
+              echo "=== End of app logs ==="
+              # Output Docker logs for the test container
+              echo "=== Test container logs ==="
+              docker logs test-container || true
+              echo "=== End of test container logs ==="
               exit 1
           fi
 
           if [[ "$RESPONSE_BODY" != *"Backup initiated successfully"* ]]; then
               echo "Test failed: Expected response body to contain 'Backup initiated successfully'"
               echo "Response: $RESPONSE_BODY"
+              # Output app logs for debugging
+              echo "=== App logs ==="
+              cat app.log
+              echo "=== End of app logs ==="
+              # Output Docker logs for the test container
+              echo "=== Test container logs ==="
+              docker logs test-container || true
+              echo "=== End of test container logs ==="
               exit 1
           fi
 
@@ -82,6 +104,7 @@ jobs:
 
           # Cleanup
           killall myapp || true
+          docker rm -f test-container || true
 
       - name: Output application logs
         if: always()
@@ -94,7 +117,7 @@ jobs:
           # List directories that match the backup pattern created by docker-backup.sh
           echo "Backup directories:"
           ls -la /tmp/docker-backups/ 2>/dev/null || echo "No backup directory found at /tmp/docker-backups/"
-          
+
           # If backup directories exist, show their contents
           if [[ -d "/tmp/docker-backups" ]]; then
             for backup_dir in /tmp/docker-backups/*/; do
