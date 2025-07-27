@@ -1,4 +1,4 @@
-name: Go Build and Test
+name: Go Callback Handler Test
 
 on:
   push:
@@ -44,7 +44,7 @@ jobs:
 
       - name: Run integration test
         run: |
-          # Start the application in the background
+          # Start the callback handler application in the background
           nohup ./myapp > app.log 2>&1 &
 
           # Health check - wait for the server to be ready (max 30 seconds)
@@ -57,7 +57,7 @@ jobs:
               sleep 1
           done
 
-          # Prepare and send API request
+          # Prepare and send a simulated external callback (POST request)
           SIGNATURE=$(echo -n '{"args":[]}' | openssl dgst -sha256 -hmac "my-test-secret" | sed 's/^.* //')
           RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/backup \
               -H "Content-Type: application/json" \
@@ -81,7 +81,7 @@ jobs:
               exit 1
           fi
 
-          echo "Integration test passed"
+          echo "Callback handler test passed"
 
           # Cleanup
           killall myapp || true

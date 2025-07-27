@@ -11,6 +11,7 @@ type Config struct {
 	Port           string
 	ScriptPath     string
 	CallbackSecret string
+	CallbackURL    string // 新增字段用于存储回调URL
 }
 
 // LoadConfig 从指定路径读取配置文件并返回配置对象
