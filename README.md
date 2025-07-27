@@ -6,10 +6,10 @@
 
 ```bash
 # 立即安装使用
-curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/install.sh | sudo bash
 ```
 
-**GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
+**GitHub仓库**: https://github.com/shuguangnet/docker_backup_script
 
 
 
@@ -115,16 +115,16 @@ apk add jq curl tar rsync gnupg
 #### 方法1：直接下载并安装
 ```bash
 # 一键下载并安装（推荐）
-curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/install.sh | sudo bash
 
 # 或者使用wget
-wget -qO- https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+wget -qO- https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/install.sh | sudo bash
 ```
 
 #### 方法2：下载脚本后查看再执行（更安全）
 ```bash
 # 下载安装脚本
-curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/install.sh -o install.sh
 
 # 查看脚本内容（确保安全）
 cat install.sh
@@ -137,10 +137,10 @@ sudo ./install.sh
 #### 方法3：克隆整个仓库
 ```bash
 # 克隆仓库
-git clone https://github.com/shuguangnet/dcoker_backup_script.git
+git clone https://github.com/shuguangnet/docker_backup_script.git
 
 # 进入目录并安装
-cd dcoker_backup_script
+cd docker_backup_script
 sudo ./install.sh
 ```
 
@@ -175,14 +175,14 @@ sudo ./install.sh --uninstall
 #### 1. 下载脚本
 ```bash
 # 克隆仓库
-git clone https://github.com/shuguangnet/dcoker_backup_script.git
+git clone https://github.com/shuguangnet/docker_backup_script.git
 cd dcoker_backup_script
 
 # 或者直接下载脚本文件
-wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/docker-backup.sh
-wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/docker-restore.sh
-wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/backup-utils.sh
-wget https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/backup.conf
+wget https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/docker-backup.sh
+wget https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/docker-restore.sh
+wget https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/backup-utils.sh
+wget https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/backup.conf
 ```
 
 #### 2. 设置权限
@@ -904,7 +904,7 @@ COMPRESSION_FORMAT="gzip"  # 最快
 ## 📞 支持和贡献
 
 ### 🌟 项目信息
-- **GitHub仓库**: https://github.com/shuguangnet/dcoker_backup_script
+- **GitHub仓库**: https://github.com/shuguangnet/docker_backup_script
 - **主分支**: main
 - **许可证**: MIT License
 - **语言**: Bash Shell
@@ -912,7 +912,7 @@ COMPRESSION_FORMAT="gzip"  # 最快
 ### 🚀 快速开始
 ```bash
 # 一键安装
-curl -fsSL https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main/install.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/shuguangnet/docker_backup_script/main/install.sh | sudo bash
 
 # 立即使用
 docker-backup-menu  # 启动交互式菜单
@@ -923,8 +923,8 @@ docker-cleanup 30   # 清理30天前的备份
 ### 获取帮助
 - 查看内置帮助：`docker-backup --help` 或 `./docker-backup.sh --help`
 - 检查配置文件：`backup.conf`
-- 查看完整文档：[README.md](https://github.com/shuguangnet/dcoker_backup_script/blob/main/README.md)
-- 一键安装脚本：[install.sh](https://github.com/shuguangnet/dcoker_backup_script/blob/main/install.sh)
+- 查看完整文档：[README.md](https://github.com/shuguangnet/docker_backup_script/blob/main/README.md)
+- 一键安装脚本：[install.sh](https://github.com/shuguangnet/docker_backup_script/blob/main/install.sh)
 
 ### 报告问题
 如果遇到问题，请在GitHub提交Issue并提供以下信息：
@@ -933,7 +933,7 @@ docker-cleanup 30   # 清理30天前的备份
 3. 错误信息和日志
 4. 使用的命令和配置
 
-**GitHub Issues**: https://github.com/shuguangnet/dcoker_backup_script/issues
+**GitHub Issues**: https://github.com/shuguangnet/docker_backup_script/issues
 
 ### 贡献代码
 欢迎提交Pull Request，请确保：
@@ -942,7 +942,7 @@ docker-cleanup 30   # 清理30天前的备份
 3. 更新相关文档
 4. 测试新功能
 
-**GitHub Pull Requests**: https://github.com/shuguangnet/dcoker_backup_script/pulls
+**GitHub Pull Requests**: https://github.com/shuguangnet/docker_backup_script/pulls
 
 ## 📁 项目结构
 
