@@ -103,3 +103,8 @@ curl -X POST \
   -d "$BODY" \
   http://localhost:47731/backup
 ```
+
+## 文档导航
+
+- [完整使用指南 (USAGE.md)](USAGE.md)
+- [GitHub Actions 工作流文档 (WORKFLOW_zh-CN.md)](WORKFLOW_zh-CN.md)
