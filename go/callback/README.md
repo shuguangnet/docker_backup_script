@@ -4,6 +4,10 @@
 
 此工具提供了一个带签名验证的安全回调接口，用于触发 Docker 容器和卷的备份操作。
 
+## 完整使用指南
+
+有关如何安装、配置和使用此回调服务器的完整指南，请参阅 [USAGE.md](USAGE.md) 文件。
+
 ## 配置
 
 在使用此回调服务器之前，您需要在项目根目录下的 `backup.conf` 文件中配置 `callback_secret`。
@@ -18,20 +22,20 @@ callback_secret=your_secret_key_here
 在 `go/callback/` 目录中运行以下命令来编译服务器：
 
 ```bash
-go build -o ../../callback_server .
+go build -o callback_server.exe .
 ```
 
-这将在项目根目录生成一个名为 `callback_server` 的可执行文件。
+这将生成一个名为 `callback_server.exe` 的可执行文件（在 Windows 上）。
 
 ## 运行服务器
 
-切换到项目根目录并运行生成的可执行文件：
+在 `go/callback/` 目录中运行生成的可执行文件：
 
 ```bash
-./callback_server
+./callback_server.exe
 ```
 
-服务器将在 `localhost:8080` 启动。
+服务器将在 `localhost:47731` 启动。
 
 ## API 端点
 
@@ -58,7 +62,7 @@ go build -o ../../callback_server .
 在 `go/callback/` 目录中运行以下命令来编译客户端示例：
 
 ```bash
-go build -o client_example client_example.go
+go build -o client_example.exe client_example.go
 ```
 
 由于 `client_example.go` 文件被构建标签 `//go:build ignore` 标记，所以编译时必须显式指定文件名。
@@ -66,7 +70,7 @@ go build -o client_example client_example.go
 然后可以使用以下命令来调用回调接口：
 
 ```bash
-./client_example -a --volumes
+./client_example.exe -a --volumes
 ```
 
 ## Client Examples
