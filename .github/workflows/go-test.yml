@@ -36,7 +36,7 @@ jobs:
       - name: Create test files
         run: |
           echo "Port=8080" > backup.conf
-          echo "CallbackSecret=my-test-secret" >> backup.conf
+          echo "callback_secret=my-test-secret" >> backup.conf
           echo "ScriptPath=./test-script.sh" >> backup.conf
           echo "#!/bin/bash" > test-script.sh
           echo 'echo "script output"' >> test-script.sh
@@ -84,7 +84,7 @@ jobs:
           echo "Integration test passed"
 
           # Cleanup
-          pkill -f ./myapp || true
+          killall myapp || true
 
       - name: Output application logs
         if: always()
