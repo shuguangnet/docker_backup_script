@@ -1,0 +1,91 @@
+name: Go Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Cache Go modules and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Build application
+        run: go build -v -o ./myapp ./go/callback/main.go
+
+      - name: Create test files
+        run: |
+          echo "Port=8080" > backup.conf
+          echo "CallbackSecret=my-test-secret" >> backup.conf
+          echo "ScriptPath=./test-script.sh" >> backup.conf
+          echo "#!/bin/bash" > test-script.sh
+          echo 'echo "script output"' >> test-script.sh
+          chmod +x test-script.sh
+
+      - name: Run integration test
+        run: |
+          # Start the application in the background
+          nohup ./myapp > app.log 2>&1 &
+
+          # Health check - wait for the server to be ready (max 30 seconds)
+          for i in {1..30}; do
+              if curl -s http://localhost:8080 >/dev/null; then
+                  echo "Server is ready"
+                  break
+              fi
+              echo "Waiting for server to be ready..."
+              sleep 1
+          done
+
+          # Prepare and send API request
+          SIGNATURE=$(echo -n '{"args":[]}' | openssl dgst -sha256 -hmac "my-test-secret" | sed 's/^.* //')
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST http://localhost:8080/backup \
+              -H "Content-Type: application/json" \
+              -H "X-Signature: sha256=$SIGNATURE" \
+              -d '{"args":[]}')
+
+          # Extract response body and status code
+          RESPONSE_BODY=$(echo "$RESPONSE" | head -n -1)
+          STATUS_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+          # Verify response
+          if [ "$STATUS_CODE" != "200" ]; then
+              echo "Test failed: Expected status code 200, got $STATUS_CODE"
+              echo "Response: $RESPONSE_BODY"
+              exit 1
+          fi
+
+          if [[ "$RESPONSE_BODY" != *"Backup initiated successfully"* ]]; then
+              echo "Test failed: Expected response body to contain 'Backup initiated successfully'"
+              echo "Response: $RESPONSE_BODY"
+              exit 1
+          fi
+
+          echo "Integration test passed"
+
+          # Cleanup
+          pkill -f ./myapp || true
+
+      - name: Output application logs
+        if: always()
+        run: cat app.log
