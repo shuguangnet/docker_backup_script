@@ -36,12 +36,22 @@ func LoadConfig(path string) (*Config, error) {
 			continue
 		}
 
-		// 查找 callback_secret
-		if strings.HasPrefix(trimmedLine, "callback_secret") {
-			parts := strings.SplitN(trimmedLine, "=", 2)
-			if len(parts) == 2 {
-				config.CallbackSecret = strings.TrimSpace(parts[1])
-			}
+		// 解析键值对
+		parts := strings.SplitN(trimmedLine, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// 根据键更新配置
+		switch key {
+		case "port":
+			config.Port = value
+		case "scriptpath":
+			config.ScriptPath = value
+		case "callback_secret":
+			config.CallbackSecret = value
 		}
 	}
 
