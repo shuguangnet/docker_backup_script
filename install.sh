@@ -14,6 +14,11 @@ INSTALL_DIR="/opt/docker-backup"
 BACKUP_DIR="/var/backups/docker"
 SERVICE_USER="docker-backup"
 
+# GitHub仓库信息
+GITHUB_REPO="shuguangnet/dcoker_backup_script"
+GITHUB_RAW_URL="https://raw.githubusercontent.com/$GITHUB_REPO/main"
+GITHUB_API_URL="https://api.github.com/repos/$GITHUB_REPO"
+
 # 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -27,6 +32,276 @@ log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warning() { echo -e "${YELLOW}[WARNING]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+
+# 版本比较函数
+version_compare() {
+    if [[ $1 == $2 ]]; then
+        return 0
+    fi
+    local IFS=.
+    local i ver1=($1) ver2=($2)
+    # 填充空字段为0
+    for ((i=${#ver1[@]}; i<${#ver2[@]}; i++)); do
+        ver1[i]=0
+    done
+    for ((i=${#ver2[@]}; i<${#ver1[@]}; i++)); do
+        ver2[i]=0
+    done
+    for ((i=0; i<${#ver1[@]}; i++)); do
+        if [[ -z ${ver2[i]} ]]; then
+            ver2[i]=0
+        fi
+        if ((10#${ver1[i]} > 10#${ver2[i]})); then
+            return 1
+        fi
+        if ((10#${ver1[i]} < 10#${ver2[i]})); then
+            return 2
+        fi
+    done
+    return 0
+}
+
+# 获取最新版本信息
+get_latest_version() {
+    local version_info
+    local retry_count=0
+    local max_retries=3
+
+    while [[ $retry_count -lt $max_retries ]]; do
+        # 静默检查版本，避免日志输出干扰
+        if [[ $retry_count -gt 0 ]]; then
+            log_warning "获取版本信息失败，等待3秒后重试... ($((retry_count + 1))/$max_retries)"
+        fi
+
+        # 尝试从GitHub API获取最新版本
+        if version_info=$(curl -fsSL "$GITHUB_API_URL/releases/latest" 2>/dev/null); then
+            local latest_version
+            latest_version=$(echo "$version_info" | jq -r '.tag_name' 2>/dev/null | sed 's/^v//')
+
+            if [[ -n "$latest_version" && "$latest_version" != "null" ]]; then
+                echo "$latest_version"
+                return 0
+            fi
+        fi
+
+        # 如果API失败，尝试从install.sh文件获取版本
+        if version_info=$(curl -fsSL "$GITHUB_RAW_URL/install.sh" 2>/dev/null); then
+            local latest_version
+            latest_version=$(echo "$version_info" | grep '^SCRIPT_VERSION=' | head -1 | cut -d'"' -f2)
+
+            if [[ -n "$latest_version" ]]; then
+                echo "$latest_version"
+                return 0
+            fi
+        fi
+
+        retry_count=$((retry_count + 1))
+        if [[ $retry_count -lt $max_retries ]]; then
+            sleep 3
+        fi
+    done
+
+    return 1
+}
+
+# 检查是否有新版本
+check_for_updates() {
+    log_info "检查脚本更新..."
+
+    local latest_version
+    if ! latest_version=$(get_latest_version); then
+        log_warning "无法检查更新，继续使用当前版本 $SCRIPT_VERSION"
+        return 1
+    fi
+
+    log_info "当前版本: $SCRIPT_VERSION"
+    log_info "最新版本: $latest_version"
+
+    version_compare "$SCRIPT_VERSION" "$latest_version"
+    local compare_result=$?
+
+    case $compare_result in
+        0)
+            log_success "已是最新版本"
+            return 0
+            ;;
+        1)
+            log_warning "当前版本 ($SCRIPT_VERSION) 比最新版本 ($latest_version) 更新"
+            return 0
+            ;;
+        2)
+            log_warning "发现新版本: $latest_version"
+            return 1
+            ;;
+    esac
+}
+
+# 升级脚本
+upgrade_script() {
+    log_info "开始升级脚本到最新版本..."
+
+    local latest_version
+    if ! latest_version=$(get_latest_version); then
+        log_error "无法获取最新版本信息"
+        return 1
+    fi
+
+    log_info "正在下载最新版本 $latest_version..."
+
+    # 创建临时目录
+    local temp_dir
+    temp_dir=$(mktemp -d)
+
+    # 下载最新版本的install.sh
+    if ! curl -fsSL "$GITHUB_RAW_URL/install.sh" -o "$temp_dir/install.sh"; then
+        log_error "下载最新版本失败"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # 验证下载的文件
+    if ! bash -n "$temp_dir/install.sh"; then
+        log_error "下载的文件格式错误"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # 备份当前脚本
+    local backup_file
+    backup_file="install.sh.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$0" "$backup_file"
+    log_info "当前脚本已备份为: $backup_file"
+
+    # 替换当前脚本
+    if cp "$temp_dir/install.sh" "$0"; then
+        chmod +x "$0"
+        log_success "脚本升级完成！"
+        log_info "新版本: $latest_version"
+        rm -rf "$temp_dir"
+        return 0
+    else
+        log_error "脚本替换失败"
+        # 恢复备份
+        cp "$backup_file" "$0"
+        chmod +x "$0"
+        rm -rf "$temp_dir"
+        return 1
+    fi
+}
+
+# 升级已安装的工具
+upgrade_installed_tools() {
+    if [[ "$DEV_MODE" == true ]]; then
+        log_info "开发模式：跳过工具升级"
+        return 0
+    fi
+
+    if [[ ! -d "$INSTALL_DIR" ]]; then
+        log_warning "安装目录不存在，跳过工具升级"
+        return 0
+    fi
+
+    log_info "升级已安装的工具文件..."
+
+    local files=(
+        "docker-backup.sh"
+        "docker-restore.sh"
+        "backup-utils.sh"
+        "docker-backup-menu.sh"
+        "docker-cleanup.sh"
+        "backup.conf"
+        "README.md"
+        "test-compose-detection.sh"
+    )
+
+    local failed_files=()
+
+    for file in "${files[@]}"; do
+        log_info "  更新: $file"
+        if ! curl -fsSL "$GITHUB_RAW_URL/$file" -o "$INSTALL_DIR/$file"; then
+            log_warning "更新失败: $file"
+            failed_files+=("$file")
+        else
+            if [[ "$file" == *.sh ]]; then
+                chmod +x "$INSTALL_DIR/$file"
+            fi
+        fi
+    done
+
+    # 设置权限
+    chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
+
+    if [[ ${#failed_files[@]} -eq 0 ]]; then
+        log_success "所有工具文件更新完成"
+    else
+        log_warning "部分文件更新失败: ${failed_files[*]}"
+    fi
+}
+
+# 强制更新检查（在脚本执行前）
+force_update_check() {
+    # 如果指定了跳过更新检查，则直接返回
+    if [[ "$SKIP_UPDATE_CHECK" == true ]]; then
+        return 0
+    fi
+
+    log_info "检查脚本版本更新..."
+
+    local latest_version
+    if ! latest_version=$(get_latest_version); then
+        log_warning "无法检查更新，继续使用当前版本 $SCRIPT_VERSION"
+        return 0
+    fi
+
+    version_compare "$SCRIPT_VERSION" "$latest_version"
+    local compare_result=$?
+
+    case $compare_result in
+        0)
+            log_success "当前版本已是最新版本 ($SCRIPT_VERSION)"
+            return 0
+            ;;
+        1)
+            log_warning "当前版本 ($SCRIPT_VERSION) 比最新版本 ($latest_version) 更新"
+            return 0
+            ;;
+        2)
+            log_warning "发现新版本: $latest_version (当前: $SCRIPT_VERSION)"
+
+            # 询问是否自动更新
+            if [[ "$AUTO_UPDATE" == true ]]; then
+                log_info "自动更新模式：开始升级脚本..."
+                if upgrade_script; then
+                    log_success "脚本已升级到最新版本，请重新运行命令"
+                    exit 0
+                else
+                    log_error "自动更新失败，继续使用当前版本"
+                    return 1
+                fi
+            else
+                echo
+                log_warning "发现新版本 $latest_version，当前版本为 $SCRIPT_VERSION"
+                echo
+                echo "建议升级到最新版本以获得更好的功能和修复。"
+                echo
+                read -p "是否立即升级脚本? [Y/n]: " -r
+                if [[ $REPLY =~ ^[Nn]$ ]]; then
+                    log_info "用户选择跳过更新，继续使用当前版本"
+                    return 0
+                else
+                    log_info "开始升级脚本..."
+                    if upgrade_script; then
+                        log_success "脚本已升级到最新版本，请重新运行命令"
+                        exit 0
+                    else
+                        log_error "升级失败，继续使用当前版本"
+                        return 1
+                    fi
+                fi
+            fi
+            ;;
+    esac
+}
 
 # 显示横幅
 show_banner() {
@@ -60,12 +335,22 @@ show_usage() {
     --no-service           不创建系统服务
     --no-cron              不设置定时任务
     --dev-mode             开发模式（使用当前目录）
+    --check-update         检查脚本更新
+    --upgrade              升级脚本到最新版本
+    --upgrade-tools        升级已安装的工具文件
+    --auto-update          自动更新模式（发现新版本时自动升级）
+    --skip-update-check    跳过版本更新检查
     --uninstall            卸载工具
 
 示例:
-    $0                                    # 标准安装
+    $0                                    # 标准安装（会检查更新）
     $0 -d /usr/local/docker-backup       # 自定义安装目录
     $0 --dev-mode                        # 开发模式
+    $0 --auto-update                     # 自动更新模式
+    $0 --check-update                    # 检查更新
+    $0 --upgrade                         # 升级脚本
+    $0 --upgrade-tools                   # 升级工具文件
+    $0 --skip-update-check               # 跳过更新检查
     $0 --uninstall                       # 卸载工具
 
 EOF
@@ -84,20 +369,20 @@ detect_os() {
         log_error "无法检测操作系统类型"
         exit 1
     fi
-    
+
     log_info "检测到操作系统: $OS $OS_VERSION"
 }
 
 # 检查系统要求
 check_requirements() {
     log_info "检查系统要求..."
-    
+
     # 检查是否为root用户
     if [[ $EUID -ne 0 ]] && [[ "$DEV_MODE" != true ]]; then
         log_error "请使用sudo运行此脚本"
         exit 1
     fi
-    
+
     # 检查Docker
     if ! command -v docker >/dev/null 2>&1; then
         log_error "Docker未安装，请先安装Docker"
@@ -115,7 +400,7 @@ check_requirements() {
         esac
         exit 1
     fi
-    
+
     # 检查Docker服务状态
     if ! docker info >/dev/null 2>&1; then
         log_warning "Docker服务未运行，尝试启动..."
@@ -126,14 +411,14 @@ check_requirements() {
             exit 1
         fi
     fi
-    
+
     log_success "系统要求检查通过"
 }
 
 # 安装依赖包
 install_dependencies() {
     log_info "安装必需的依赖包..."
-    
+
     case "$OS" in
         ubuntu|debian)
             apt-get update
@@ -158,7 +443,7 @@ install_dependencies() {
             log_warning "未知的操作系统，请手动安装: jq curl tar rsync gnupg"
             ;;
     esac
-    
+
     # 验证关键工具
     local missing_tools=()
     for tool in jq curl tar docker; do
@@ -166,12 +451,12 @@ install_dependencies() {
             missing_tools+=("$tool")
         fi
     done
-    
+
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         log_error "以下工具安装失败: ${missing_tools[*]}"
         exit 1
     fi
-    
+
     log_success "依赖包安装完成"
 }
 
@@ -182,7 +467,7 @@ create_service_user() {
         log_info "开发模式：使用当前用户 $SERVICE_USER"
         return
     fi
-    
+
     if ! id "$SERVICE_USER" >/dev/null 2>&1; then
         log_info "创建服务用户: $SERVICE_USER"
         useradd -r -s /bin/bash -d "$INSTALL_DIR" -c "Docker Backup Service" "$SERVICE_USER"
@@ -196,25 +481,25 @@ create_service_user() {
 # 安装工具文件
 install_files() {
     log_info "安装工具文件到: $INSTALL_DIR"
-    
+
     if [[ "$DEV_MODE" == true ]]; then
         INSTALL_DIR=$(pwd)
         log_info "开发模式：使用当前目录 $INSTALL_DIR"
         return
     fi
-    
+
     # 创建安装目录
     mkdir -p "$INSTALL_DIR"
-    
+
     # GitHub仓库基础URL
     local GITHUB_RAW_URL="https://raw.githubusercontent.com/shuguangnet/dcoker_backup_script/main"
-    
+
     # 下载必要文件
     log_info "从GitHub下载文件..."
-    
+
     local files=(
         "docker-backup.sh"
-        "docker-restore.sh" 
+        "docker-restore.sh"
         "backup-utils.sh"
         "docker-backup-menu.sh"
         "docker-cleanup.sh"
@@ -222,7 +507,7 @@ install_files() {
         "README.md"
         "test-compose-detection.sh"
     )
-    
+
     for file in "${files[@]}"; do
         log_info "  下载: $file"
         if ! curl -fsSL "$GITHUB_RAW_URL/$file" -o "$INSTALL_DIR/$file"; then
@@ -230,39 +515,39 @@ install_files() {
             exit 1
         fi
     done
-    
+
     # 设置权限
     chmod +x "$INSTALL_DIR"/*.sh
     chmod 644 "$INSTALL_DIR"/backup.conf
     chmod 644 "$INSTALL_DIR"/README.md
-    
+
     # 设置所有者
     chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
-    
+
     log_success "工具文件安装完成"
 }
 
 # 创建备份目录
 create_backup_directory() {
     log_info "创建备份目录: $BACKUP_DIR"
-    
+
     mkdir -p "$BACKUP_DIR"
-    
+
     if [[ "$DEV_MODE" != true ]]; then
         chown "$SERVICE_USER:$SERVICE_USER" "$BACKUP_DIR"
     fi
-    
+
     chmod 750 "$BACKUP_DIR"
-    
+
     log_success "备份目录创建完成"
 }
 
 # 创建配置文件
 create_config() {
     local config_file="$INSTALL_DIR/backup.conf.local"
-    
+
     log_info "创建本地配置文件: $config_file"
-    
+
     cat > "$config_file" << EOF
 # Docker容器备份工具本地配置
 # 此文件将覆盖默认配置
@@ -297,12 +582,12 @@ SLACK_NOTIFICATIONS=false
 REMOTE_BACKUP_ENABLED=false
 UPLOAD_AFTER_BACKUP=false
 EOF
-    
+
     chmod 644 "$config_file"
     if [[ "$DEV_MODE" != true ]]; then
         chown "$SERVICE_USER:$SERVICE_USER" "$config_file"
     fi
-    
+
     log_success "配置文件创建完成"
 }
 
@@ -312,9 +597,9 @@ create_systemd_service() {
         log_info "跳过系统服务创建"
         return
     fi
-    
+
     log_info "创建systemd服务..."
-    
+
     cat > /etc/systemd/system/docker-backup.service << EOF
 [Unit]
 Description=Docker Container Backup Service
@@ -333,7 +618,7 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
-    
+
     # 创建定时器
     cat > /etc/systemd/system/docker-backup.timer << EOF
 [Unit]
@@ -347,10 +632,10 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
-    
+
     systemctl daemon-reload
     systemctl enable docker-backup.timer
-    
+
     log_success "系统服务创建完成"
 }
 
@@ -360,11 +645,11 @@ create_cron_job() {
         log_info "跳过定时任务创建"
         return
     fi
-    
+
     log_info "创建定时备份任务..."
-    
+
     local cron_file="/etc/cron.d/docker-backup"
-    
+
     cat > "$cron_file" << EOF
 # Docker容器自动备份任务
 # 每天凌晨2点执行备份
@@ -373,9 +658,9 @@ create_cron_job() {
 # 每周日凌晨3点清理旧备份
 0 3 * * 0 $SERVICE_USER find $BACKUP_DIR -type d -mtime +30 -exec rm -rf {} \; >/dev/null 2>&1
 EOF
-    
+
     chmod 644 "$cron_file"
-    
+
     # 重启cron服务
     case "$OS" in
         ubuntu|debian)
@@ -385,7 +670,7 @@ EOF
             systemctl restart crond
             ;;
     esac
-    
+
     log_success "定时任务创建完成"
 }
 
@@ -395,16 +680,16 @@ create_shortcuts() {
         log_info "开发模式：跳过快捷命令创建"
         return
     fi
-    
+
     log_info "创建快捷命令..."
-    
+
     # 创建备份命令
     cat > /usr/local/bin/docker-backup << EOF
 #!/bin/bash
 cd $INSTALL_DIR
 exec ./docker-backup.sh -c $INSTALL_DIR/backup.conf.local "\$@"
 EOF
-    
+
         # 创建恢复命令
     cat > /usr/local/bin/docker-restore << EOF
 #!/bin/bash
@@ -430,7 +715,7 @@ EOF
     chmod +x /usr/local/bin/docker-restore
     chmod +x /usr/local/bin/docker-backup-menu
     chmod +x /usr/local/bin/docker-cleanup
-    
+
     log_success "快捷命令创建完成"
     log_info "现在可以使用以下命令："
     log_info "  docker-backup -a              # 备份所有容器"
@@ -443,7 +728,7 @@ EOF
 # 运行测试
 run_tests() {
     log_info "运行基础测试..."
-    
+
     # 测试脚本执行权限
     if [[ -x "$INSTALL_DIR/docker-backup.sh" ]]; then
         log_success "备份脚本权限正常"
@@ -451,7 +736,7 @@ run_tests() {
         log_error "备份脚本权限异常"
         return 1
     fi
-    
+
     # 测试依赖工具
     for tool in jq docker tar; do
         if command -v "$tool" >/dev/null 2>&1; then
@@ -461,7 +746,7 @@ run_tests() {
             return 1
         fi
     done
-    
+
     # 测试Docker连接
     if docker info >/dev/null 2>&1; then
         log_success "Docker连接正常"
@@ -469,7 +754,7 @@ run_tests() {
         log_error "Docker连接失败"
         return 1
     fi
-    
+
     # 测试配置文件
     if [[ -f "$INSTALL_DIR/backup.conf.local" ]]; then
         log_success "配置文件存在"
@@ -477,7 +762,7 @@ run_tests() {
         log_error "配置文件缺失"
         return 1
     fi
-    
+
     log_success "所有测试通过"
 }
 
@@ -511,6 +796,13 @@ show_summary() {
     fi
     echo "  crontab -l -u $SERVICE_USER             # 查看定时任务"
     echo
+    echo "升级命令："
+    echo "  $0 --check-update                    # 检查脚本更新"
+    echo "  $0 --upgrade                         # 升级脚本到最新版本"
+    echo "  $0 --upgrade-tools                   # 升级已安装的工具文件"
+    echo "  $0 --auto-update                     # 自动更新模式"
+    echo "  $0 --skip-update-check               # 跳过更新检查"
+    echo
     echo "配置文件："
     echo "  编辑 $INSTALL_DIR/backup.conf.local 来自定义配置"
     echo
@@ -528,20 +820,20 @@ show_summary() {
 # 卸载函数
 uninstall() {
     log_info "开始卸载Docker备份工具..."
-    
+
     # 停止并禁用服务
     if systemctl is-active docker-backup.timer >/dev/null 2>&1; then
         systemctl stop docker-backup.timer
         systemctl disable docker-backup.timer
     fi
-    
+
     # 删除系统文件
     rm -f /etc/systemd/system/docker-backup.service
     rm -f /etc/systemd/system/docker-backup.timer
     rm -f /etc/cron.d/docker-backup
     rm -f /usr/local/bin/docker-backup
     rm -f /usr/local/bin/docker-restore
-    
+
     # 删除安装目录（保留备份）
     if [[ -d "$INSTALL_DIR" ]] && [[ "$INSTALL_DIR" != "/" ]]; then
         read -p "是否删除安装目录 $INSTALL_DIR? [y/N]: " -r
@@ -550,7 +842,7 @@ uninstall() {
             log_success "安装目录已删除"
         fi
     fi
-    
+
     # 可选删除备份目录
     if [[ -d "$BACKUP_DIR" ]] && [[ "$BACKUP_DIR" != "/" ]]; then
         read -p "是否删除备份目录 $BACKUP_DIR? [y/N]: " -r
@@ -561,7 +853,7 @@ uninstall() {
             log_info "备份目录保留: $BACKUP_DIR"
         fi
     fi
-    
+
     # 删除服务用户
     if [[ "$SERVICE_USER" != "root" ]] && id "$SERVICE_USER" >/dev/null 2>&1; then
         read -p "是否删除服务用户 $SERVICE_USER? [y/N]: " -r
@@ -570,9 +862,9 @@ uninstall() {
             log_success "服务用户已删除"
         fi
     fi
-    
+
     systemctl daemon-reload
-    
+
     log_success "卸载完成"
 }
 
@@ -582,7 +874,12 @@ parse_arguments() {
     NO_CRON=false
     DEV_MODE=false
     UNINSTALL=false
-    
+    CHECK_UPDATE=false
+    UPGRADE_SCRIPT=false
+    UPGRADE_TOOLS=false
+    AUTO_UPDATE=false
+    SKIP_UPDATE_CHECK=false
+
     while [[ $# -gt 0 ]]; do
         case $1 in
             -h|--help)
@@ -613,6 +910,27 @@ parse_arguments() {
                 DEV_MODE=true
                 NO_SERVICE=true
                 NO_CRON=true
+                SKIP_UPDATE_CHECK=true
+                shift
+                ;;
+            --check-update)
+                CHECK_UPDATE=true
+                shift
+                ;;
+            --upgrade)
+                UPGRADE_SCRIPT=true
+                shift
+                ;;
+            --upgrade-tools)
+                UPGRADE_TOOLS=true
+                shift
+                ;;
+            --auto-update)
+                AUTO_UPDATE=true
+                shift
+                ;;
+            --skip-update-check)
+                SKIP_UPDATE_CHECK=true
                 shift
                 ;;
             --uninstall)
@@ -631,42 +949,80 @@ parse_arguments() {
 # 主函数
 main() {
     show_banner
-    
+
     # 解析参数
     parse_arguments "$@"
-    
+
+    # 处理升级相关选项
+    if [[ "$CHECK_UPDATE" == true ]]; then
+        check_for_updates
+        exit $?
+    fi
+
+    if [[ "$UPGRADE_SCRIPT" == true ]]; then
+        if check_for_updates; then
+            log_info "已是最新版本，无需升级"
+            exit 0
+        fi
+
+        if upgrade_script; then
+            log_success "脚本升级完成！请重新运行脚本"
+            exit 0
+        else
+            log_error "脚本升级失败"
+            exit 1
+        fi
+    fi
+
+    if [[ "$UPGRADE_TOOLS" == true ]]; then
+        # 检测系统环境
+        detect_os
+        check_requirements
+
+        if upgrade_installed_tools; then
+            log_success "工具文件升级完成！"
+            exit 0
+        else
+            log_error "工具文件升级失败"
+            exit 1
+        fi
+    fi
+
     # 如果是卸载模式
     if [[ "$UNINSTALL" == true ]]; then
         uninstall
         exit 0
     fi
-    
+
+    # 强制更新检查（在开始执行前）
+    force_update_check
+
     # 检测系统环境
     detect_os
     check_requirements
-    
+
     # 安装依赖
     install_dependencies
-    
+
     # 创建用户和目录
     create_service_user
     create_backup_directory
-    
+
     # 安装文件
     install_files
     create_config
-    
+
     # 创建服务和任务
     create_systemd_service
     create_cron_job
     create_shortcuts
-    
+
     # 运行测试
     run_tests
-    
+
     # 显示摘要
     show_summary
-    
+
     log_success "安装完成！"
 }
 
@@ -674,4 +1030,4 @@ main() {
 # 兼容管道执行方式 (curl | bash)
 if [[ "${BASH_SOURCE[0]:-}" == "${0}" ]] || [[ -z "${BASH_SOURCE[0]:-}" ]]; then
     main "$@"
-fi 
+fi
