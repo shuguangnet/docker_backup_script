@@ -58,10 +58,15 @@ show_main_menu() {
     echo "  14) 查看备份统计信息"
     echo "  15) 检查系统状态"
     echo ""
+    echo -e "${CYAN}🌐 网络传输${NC}"
+    echo "  16) 启动HTTP服务器（提供备份下载）"
+    echo "  17) 停止HTTP服务器"
+    echo "  18) 下载并恢复备份"
+    echo ""
     echo -e "${CYAN}⚙️  配置和帮助${NC}"
-    echo "  16) 编辑配置文件"
-    echo "  17) 查看帮助信息"
-    echo "  18) 查看版本信息"
+    echo "  19) 编辑配置文件"
+    echo "  20) 查看帮助信息"
+    echo "  21) 查看版本信息"
     echo ""
     echo "  0) 退出"
     echo ""
@@ -81,19 +86,19 @@ get_container_list() {
 show_container_selection() {
     local containers
     mapfile -t containers < <(get_container_list)
-    
+
     if [[ ${#containers[@]} -eq 0 ]]; then
         log_error "未找到运行中的容器"
         return 1
     fi
-    
+
     echo -e "${BLUE}请选择要备份的容器：${NC}"
     echo ""
-    
+
     for i in "${!containers[@]}"; do
         echo "  $((i+1))) ${containers[i]}"
     done
-    
+
     echo "  a) 选择所有容器"
     echo "  c) 自定义输入容器名称"
     echo "  0) 返回主菜单"
@@ -104,10 +109,10 @@ show_container_selection() {
 get_selected_containers() {
     local containers
     mapfile -t containers < <(get_container_list)
-    
+
     while true; do
         read -p "请输入选择 (1-${#containers[@]}, a, c, 0): " choice
-        
+
         case $choice in
             0)
                 return 1
@@ -143,16 +148,16 @@ get_selected_containers() {
 execute_backup() {
     local command="$1"
     local description="$2"
-    
+
     echo -e "${CYAN}执行操作: ${description}${NC}"
     echo -e "${YELLOW}命令: ${command}${NC}"
     echo ""
-    
+
     if ask_confirmation "确认执行此操作吗？"; then
         echo ""
         log_info "开始执行..."
         echo ""
-        
+
         # 执行命令
         if eval "$command"; then
             echo ""
@@ -161,7 +166,7 @@ execute_backup() {
             echo ""
             log_error "操作失败！"
         fi
-        
+
         echo ""
         read -p "按回车键继续..."
     fi
@@ -171,7 +176,7 @@ execute_backup() {
 backup_all_containers() {
     local exclude_options="$1"
     local description="$2"
-    
+
     local command="docker-backup -a $exclude_options"
     execute_backup "$command" "$description"
 }
@@ -180,10 +185,10 @@ backup_all_containers() {
 backup_specific_containers() {
     local exclude_options="$1"
     local description="$2"
-    
+
     show_container_selection
     local selected_containers=$(get_selected_containers)
-    
+
     if [[ $? -eq 0 ]] && [[ -n "$selected_containers" ]]; then
         local command="docker-backup -c \"$selected_containers\" $exclude_options"
         execute_backup "$command" "$description"
@@ -199,9 +204,9 @@ restore_container() {
     echo "  2) 手动指定备份目录"
     echo "  0) 返回主菜单"
     echo ""
-    
+
     read -p "请输入选择: " choice
-    
+
     case $choice in
         1)
             execute_backup "docker-restore" "交互式恢复向导"
@@ -230,12 +235,12 @@ restore_container() {
 list_backups() {
     echo -e "${CYAN}可恢复的备份列表${NC}"
     echo ""
-    
+
     local backup_dir="/tmp/docker-backups"
     if [[ -d "$backup_dir" ]]; then
         echo "备份目录: $backup_dir"
         echo ""
-        
+
         local backup_count=0
         while IFS= read -r -d '' backup; do
             if [[ -d "$backup" ]] && [[ -f "$backup/restore.sh" ]]; then
@@ -243,21 +248,21 @@ list_backups() {
                 local backup_name=$(basename "$backup")
                 local backup_size=$(du -sh "$backup" 2>/dev/null | cut -f1)
                 local backup_date=$(stat -c %y "$backup" 2>/dev/null | cut -d' ' -f1)
-                
+
                 echo -e "${GREEN}$backup_count)${NC} $backup_name"
                 echo "    大小: $backup_size, 日期: $backup_date"
                 echo "    路径: $backup"
                 echo ""
             fi
         done < <(find "$backup_dir" -maxdepth 1 -type d -print0 2>/dev/null)
-        
+
         if [[ $backup_count -eq 0 ]]; then
             log_warning "未找到可恢复的备份"
         fi
     else
         log_warning "备份目录不存在: $backup_dir"
     fi
-    
+
     echo ""
     read -p "按回车键继续..."
 }
@@ -273,9 +278,9 @@ cleanup_backups() {
     echo "  4) 自定义天数清理"
     echo "  0) 返回主菜单"
     echo ""
-    
+
     read -p "请输入选择: " choice
-    
+
     case $choice in
         1)
             execute_backup "docker-cleanup 30" "清理30天前的备份"
@@ -311,17 +316,17 @@ cleanup_backups() {
 show_backup_stats() {
     echo -e "${CYAN}备份统计信息${NC}"
     echo ""
-    
+
     local backup_dir="/tmp/docker-backups"
     if [[ -d "$backup_dir" ]]; then
         local total_backups=$(find "$backup_dir" -maxdepth 1 -type d | wc -l)
         local total_size=$(du -sh "$backup_dir" 2>/dev/null | cut -f1)
-        
+
         echo "备份目录: $backup_dir"
         echo "总备份数: $((total_backups - 1))"  # 减去目录本身
         echo "总大小: $total_size"
         echo ""
-        
+
         echo "最近的备份:"
         find "$backup_dir" -maxdepth 1 -type d -name "*_*" -printf "%T@ %p\n" 2>/dev/null | \
             sort -nr | head -5 | while read timestamp path; do
@@ -333,7 +338,7 @@ show_backup_stats() {
     else
         log_warning "备份目录不存在: $backup_dir"
     fi
-    
+
     echo ""
     read -p "按回车键继续..."
 }
@@ -342,7 +347,7 @@ show_backup_stats() {
 check_system_status() {
     echo -e "${CYAN}系统状态检查${NC}"
     echo ""
-    
+
     # 检查Docker
     if command -v docker >/dev/null 2>&1; then
         echo -e "${GREEN}✓${NC} Docker已安装"
@@ -356,9 +361,9 @@ check_system_status() {
     else
         echo -e "${RED}✗${NC} Docker未安装"
     fi
-    
+
     echo ""
-    
+
     # 检查工具
     local tools=("jq" "tar" "gzip")
     for tool in "${tools[@]}"; do
@@ -368,31 +373,31 @@ check_system_status() {
             echo -e "${RED}✗${NC} $tool 未安装"
         fi
     done
-    
+
     echo ""
-    
+
     # 检查备份工具
     if command -v docker-backup >/dev/null 2>&1; then
         echo -e "${GREEN}✓${NC} docker-backup 命令可用"
     else
         echo -e "${RED}✗${NC} docker-backup 命令不可用"
     fi
-    
+
     if command -v docker-restore >/dev/null 2>&1; then
         echo -e "${GREEN}✓${NC} docker-restore 命令可用"
     else
         echo -e "${RED}✗${NC} docker-restore 命令不可用"
     fi
-    
+
     echo ""
-    
+
     # 检查磁盘空间
     local backup_dir="/tmp/docker-backups"
     if [[ -d "$backup_dir" ]]; then
         local available_space=$(df -h "$backup_dir" | tail -1 | awk '{print $4}')
         echo "备份目录可用空间: $available_space"
     fi
-    
+
     echo ""
     read -p "按回车键继续..."
 }
@@ -407,9 +412,9 @@ edit_config() {
     echo "  3) 查看当前配置"
     echo "  0) 返回主菜单"
     echo ""
-    
+
     read -p "请输入选择: " choice
-    
+
     case $choice in
         1)
             if [[ -f "/etc/docker-backup/backup.conf" ]]; then
@@ -490,6 +495,112 @@ show_help() {
     read -p "按回车键继续..."
 }
 
+# 启动HTTP服务器
+start_http_server_menu() {
+    echo -e "${CYAN}启动HTTP服务器${NC}"
+    echo ""
+
+    local backup_dir="/tmp/docker-backups"
+    if [[ ! -d "$backup_dir" ]]; then
+        log_error "备份目录不存在: $backup_dir"
+        log_info "请先运行备份命令创建备份文件"
+        read -p "按回车键继续..."
+        return
+    fi
+
+    # 检查是否有备份文件
+    local backup_count=$(find "$backup_dir" -maxdepth 1 -type d -name "*_*" | wc -l)
+    if [[ $backup_count -eq 0 ]]; then
+        log_error "备份目录中没有找到备份文件"
+        read -p "按回车键继续..."
+        return
+    fi
+
+    echo "备份目录: $backup_dir"
+    echo "找到 $backup_count 个备份"
+    echo ""
+
+    # 选择要提供下载的备份
+    echo "请选择要提供下载的备份："
+    local backups=()
+    while IFS= read -r -d '' backup; do
+        if [[ -d "$backup" ]]; then
+            backups+=("$backup")
+        fi
+    done < <(find "$backup_dir" -maxdepth 1 -type d -name "*_*" -print0 2>/dev/null)
+
+    for i in "${!backups[@]}"; do
+        local backup_name=$(basename "${backups[i]}")
+        local backup_size=$(du -sh "${backups[i]}" 2>/dev/null | cut -f1)
+        local backup_date=$(stat -c %y "${backups[i]}" 2>/dev/null | cut -d' ' -f1)
+        echo "  $((i+1))) $backup_name ($backup_date) - $backup_size"
+    done
+    echo "  a) 选择所有备份（创建压缩包）"
+    echo "  0) 返回主菜单"
+    echo ""
+
+    read -p "请输入选择: " choice
+
+    case $choice in
+        0)
+            return
+            ;;
+        a)
+            execute_backup "install.sh --start-http" "启动HTTP服务器（所有备份）"
+            ;;
+        *)
+            if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#backups[@]} ]]; then
+                local selected_backup="${backups[$((choice-1))]}"
+                execute_backup "cd '$selected_backup' && install.sh --start-http" "启动HTTP服务器（${backups[$((choice-1))]}）"
+            else
+                log_error "无效选择"
+                read -p "按回车键继续..."
+            fi
+            ;;
+    esac
+}
+
+# 停止HTTP服务器
+stop_http_server_menu() {
+    echo -e "${CYAN}停止HTTP服务器${NC}"
+    echo ""
+
+    execute_backup "install.sh --stop-http" "停止HTTP服务器"
+}
+
+# 下载并恢复备份
+download_restore_menu() {
+    echo -e "${CYAN}下载并恢复备份${NC}"
+    echo ""
+
+    echo "请输入备份下载地址："
+    echo "示例: http://192.168.1.100:6886/docker-backup.zip"
+    echo ""
+
+    read -p "下载地址: " download_url
+
+    if [[ -z "$download_url" ]]; then
+        log_error "请输入有效的下载地址"
+        read -p "按回车键继续..."
+        return
+    fi
+
+    # 验证URL格式
+    if [[ ! "$download_url" =~ ^https?:// ]]; then
+        log_error "请输入有效的HTTP/HTTPS地址"
+        read -p "按回车键继续..."
+        return
+    fi
+
+    echo ""
+    echo "下载地址: $download_url"
+    echo ""
+
+    if ask_confirmation "确认下载并恢复此备份吗？"; then
+        execute_backup "install.sh --download-restore '$download_url'" "下载并恢复备份"
+    fi
+}
+
 # 显示版本信息
 show_version() {
     echo -e "${CYAN}版本信息${NC}"
@@ -506,6 +617,8 @@ show_version() {
     echo "  ✓ 交互式操作菜单"
     echo "  ✓ 配置文件支持"
     echo "  ✓ 日志和错误处理"
+    echo "  ✓ HTTP服务器下载功能"
+    echo "  ✓ 一键下载恢复功能"
     echo ""
     read -p "按回车键继续..."
 }
@@ -515,10 +628,10 @@ main() {
     while true; do
         show_title
         show_main_menu
-        
-        read -p "请输入选择 (0-18): " choice
+
+        read -p "请输入选择 (0-21): " choice
         echo ""
-        
+
         case $choice in
             0)
                 echo -e "${GREEN}感谢使用Docker容器备份工具！${NC}"
@@ -570,16 +683,25 @@ main() {
                 check_system_status
                 ;;
             16)
-                edit_config
+                start_http_server_menu
                 ;;
             17)
-                show_help
+                stop_http_server_menu
                 ;;
             18)
+                download_restore_menu
+                ;;
+            19)
+                edit_config
+                ;;
+            20)
+                show_help
+                ;;
+            21)
                 show_version
                 ;;
             *)
-                log_error "无效选择，请输入0-18之间的数字"
+                log_error "无效选择，请输入0-21之间的数字"
                 read -p "按回车键继续..."
                 ;;
         esac
@@ -589,4 +711,4 @@ main() {
 # 脚本入口点
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     main "$@"
-fi 
+fi

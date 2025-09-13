@@ -238,6 +238,171 @@ upgrade_installed_tools() {
     fi
 }
 
+# 启动HTTP服务器
+start_http_server() {
+    local backup_dir="$1"
+    local port="${2:-6886}"
+
+    log_info "启动HTTP服务器在端口 $port..."
+
+    # 检查端口是否被占用
+    if lsof -i ":$port" >/dev/null 2>&1; then
+        log_warning "端口 $port 已被占用，尝试停止现有服务..."
+        pkill -f "python.*$port" || true
+        sleep 2
+    fi
+
+    # 创建ZIP压缩包
+    local zip_file="$backup_dir/docker-backup.zip"
+    log_info "创建备份压缩包: $zip_file"
+
+    if command -v zip >/dev/null 2>&1; then
+        cd "$backup_dir"
+        if zip -r "docker-backup.zip" . -x "*.zip" >/dev/null 2>&1; then
+            log_success "压缩包创建成功"
+        else
+            log_error "压缩包创建失败"
+            return 1
+        fi
+    else
+        log_error "需要安装zip工具来创建压缩包"
+        return 1
+    fi
+
+    # 获取本机IP地址
+    local server_ip=""
+    if command -v hostname >/dev/null 2>&1; then
+        server_ip=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+    else
+        server_ip="localhost"
+    fi
+
+    # 启动HTTP服务器
+    log_info "启动HTTP服务器..."
+    log_info "下载地址: http://$server_ip:$port/docker-backup.zip"
+    log_info "按 Ctrl+C 停止服务器"
+
+    # 使用Python启动简单的HTTP服务器
+    if command -v python3 >/dev/null 2>&1; then
+        cd "$backup_dir"
+        python3 -m http.server "$port" &
+        local server_pid=$!
+    elif command -v python >/dev/null 2>&1; then
+        cd "$backup_dir"
+        python -m SimpleHTTPServer "$port" &
+        local server_pid=$!
+    else
+        log_error "需要安装Python来启动HTTP服务器"
+        return 1
+    fi
+
+    # 保存PID
+    echo "$server_pid" > "/tmp/docker-backup-http.pid"
+
+    log_success "HTTP服务器已启动 (PID: $server_pid)"
+    log_info "服务器地址: http://$server_ip:$port"
+    log_info "下载命令: wget http://$server_ip:$port/docker-backup.zip"
+    log_info "停止服务器: kill $server_pid 或按 Ctrl+C"
+
+    # 等待用户中断
+    trap "kill $server_pid 2>/dev/null; rm -f /tmp/docker-backup-http.pid; exit 0" INT TERM
+    wait $server_pid
+}
+
+# 停止HTTP服务器
+stop_http_server() {
+    if [[ -f "/tmp/docker-backup-http.pid" ]]; then
+        local pid=$(cat "/tmp/docker-backup-http.pid")
+        if kill "$pid" 2>/dev/null; then
+            log_success "HTTP服务器已停止"
+        else
+            log_warning "无法停止HTTP服务器 (PID: $pid)"
+        fi
+        rm -f "/tmp/docker-backup-http.pid"
+    else
+        log_warning "未找到HTTP服务器进程"
+    fi
+}
+
+# 下载并恢复备份
+download_and_restore() {
+    local download_url="$1"
+    local restore_dir="${2:-/tmp/docker-backup-restore}"
+
+    log_info "下载备份文件: $download_url"
+
+    # 创建恢复目录
+    mkdir -p "$restore_dir"
+    cd "$restore_dir"
+
+    # 下载备份文件
+    if command -v wget >/dev/null 2>&1; then
+        if wget -O "docker-backup.zip" "$download_url"; then
+            log_success "备份文件下载成功"
+        else
+            log_error "备份文件下载失败"
+            return 1
+        fi
+    elif command -v curl >/dev/null 2>&1; then
+        if curl -L -o "docker-backup.zip" "$download_url"; then
+            log_success "备份文件下载成功"
+        else
+            log_error "备份文件下载失败"
+            return 1
+        fi
+    else
+        log_error "需要安装wget或curl来下载文件"
+        return 1
+    fi
+
+    # 解压备份文件
+    log_info "解压备份文件..."
+    if command -v unzip >/dev/null 2>&1; then
+        if unzip -o "docker-backup.zip"; then
+            log_success "备份文件解压成功"
+        else
+            log_error "备份文件解压失败"
+            return 1
+        fi
+    else
+        log_error "需要安装unzip工具来解压文件"
+        return 1
+    fi
+
+    # 查找恢复脚本
+    local restore_script=""
+    for script in restore.sh */restore.sh; do
+        if [[ -f "$script" && -x "$script" ]]; then
+            restore_script="$script"
+            break
+        fi
+    done
+
+    if [[ -n "$restore_script" ]]; then
+        log_info "找到恢复脚本: $restore_script"
+        log_info "开始恢复容器..."
+
+        if ./"$restore_script"; then
+            log_success "容器恢复完成！"
+        else
+            log_error "容器恢复失败"
+            return 1
+        fi
+    else
+        log_error "未找到恢复脚本"
+        return 1
+    fi
+
+    # 清理下载文件
+    read -p "是否删除下载的备份文件? [y/N]: " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$restore_dir"
+        log_info "备份文件已清理"
+    else
+        log_info "备份文件保留在: $restore_dir"
+    fi
+}
+
 # 强制更新检查（在脚本执行前）
 force_update_check() {
     # 如果指定了跳过更新检查，则直接返回
@@ -340,6 +505,9 @@ show_usage() {
     --upgrade-tools        升级已安装的工具文件
     --auto-update          自动更新模式（发现新版本时自动升级）
     --skip-update-check    跳过版本更新检查
+    --start-http           启动HTTP服务器提供备份下载
+    --stop-http            停止HTTP服务器
+    --download-restore URL 下载并恢复备份
     --uninstall            卸载工具
 
 示例:
@@ -351,6 +519,9 @@ show_usage() {
     $0 --upgrade                         # 升级脚本
     $0 --upgrade-tools                   # 升级工具文件
     $0 --skip-update-check               # 跳过更新检查
+    $0 --start-http                      # 启动HTTP服务器
+    $0 --stop-http                       # 停止HTTP服务器
+    $0 --download-restore http://IP:6886/docker-backup.zip  # 下载并恢复
     $0 --uninstall                       # 卸载工具
 
 EOF
@@ -711,10 +882,26 @@ cd $INSTALL_DIR
 exec ./docker-cleanup.sh "\$@"
 EOF
 
+    # 创建HTTP服务器命令
+    cat > /usr/local/bin/docker-backup-server << EOF
+#!/bin/bash
+cd $INSTALL_DIR
+exec ./install.sh --start-http "\$@"
+EOF
+
+    # 创建下载恢复命令
+    cat > /usr/local/bin/docker-backup-download << EOF
+#!/bin/bash
+cd $INSTALL_DIR
+exec ./install.sh --download-restore "\$@"
+EOF
+
     chmod +x /usr/local/bin/docker-backup
     chmod +x /usr/local/bin/docker-restore
     chmod +x /usr/local/bin/docker-backup-menu
     chmod +x /usr/local/bin/docker-cleanup
+    chmod +x /usr/local/bin/docker-backup-server
+    chmod +x /usr/local/bin/docker-backup-download
 
     log_success "快捷命令创建完成"
     log_info "现在可以使用以下命令："
@@ -723,6 +910,8 @@ EOF
     log_info "  docker-restore /path/to/backup # 恢复容器"
     log_info "  docker-backup-menu            # 交互式菜单"
     log_info "  docker-cleanup 30             # 清理30天前的备份"
+    log_info "  docker-backup-server          # 启动HTTP服务器"
+    log_info "  docker-backup-download URL    # 下载并恢复备份"
 }
 
 # 运行测试
@@ -803,6 +992,13 @@ show_summary() {
     echo "  $0 --auto-update                     # 自动更新模式"
     echo "  $0 --skip-update-check               # 跳过更新检查"
     echo
+    echo "网络传输命令："
+    echo "  $0 --start-http                      # 启动HTTP服务器"
+    echo "  $0 --stop-http                       # 停止HTTP服务器"
+    echo "  $0 --download-restore URL            # 下载并恢复备份"
+    echo "  docker-backup-server                 # 快捷启动服务器"
+    echo "  docker-backup-download URL           # 快捷下载恢复"
+    echo
     echo "配置文件："
     echo "  编辑 $INSTALL_DIR/backup.conf.local 来自定义配置"
     echo
@@ -879,6 +1075,9 @@ parse_arguments() {
     UPGRADE_TOOLS=false
     AUTO_UPDATE=false
     SKIP_UPDATE_CHECK=false
+    START_HTTP=false
+    STOP_HTTP=false
+    DOWNLOAD_RESTORE=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -933,6 +1132,18 @@ parse_arguments() {
                 SKIP_UPDATE_CHECK=true
                 shift
                 ;;
+            --start-http)
+                START_HTTP=true
+                shift
+                ;;
+            --stop-http)
+                STOP_HTTP=true
+                shift
+                ;;
+            --download-restore)
+                DOWNLOAD_RESTORE="$2"
+                shift 2
+                ;;
             --uninstall)
                 UNINSTALL=true
                 shift
@@ -986,6 +1197,32 @@ main() {
             log_error "工具文件升级失败"
             exit 1
         fi
+    fi
+
+    # 处理HTTP服务器选项
+    if [[ "$START_HTTP" == true ]]; then
+        if [[ -z "$BACKUP_DIR" ]]; then
+            BACKUP_DIR="/tmp/docker-backups"
+        fi
+
+        if [[ ! -d "$BACKUP_DIR" ]]; then
+            log_error "备份目录不存在: $BACKUP_DIR"
+            log_info "请先运行备份命令创建备份文件"
+            exit 1
+        fi
+
+        start_http_server "$BACKUP_DIR"
+        exit 0
+    fi
+
+    if [[ "$STOP_HTTP" == true ]]; then
+        stop_http_server
+        exit 0
+    fi
+
+    if [[ -n "$DOWNLOAD_RESTORE" ]]; then
+        download_and_restore "$DOWNLOAD_RESTORE"
+        exit 0
     fi
 
     # 如果是卸载模式
