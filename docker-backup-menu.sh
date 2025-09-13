@@ -551,7 +551,8 @@ start_http_server_menu() {
         *)
             if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le ${#backups[@]} ]]; then
                 local selected_backup="${backups[$((choice-1))]}"
-                execute_backup "cd '$selected_backup' && install.sh --start-http" "启动HTTP服务器（${backups[$((choice-1))]}）"
+                local backup_name=$(basename "${selected_backup}")
+                execute_backup "install.sh --start-http -b '$selected_backup'" "启动HTTP服务器（$backup_name）"
             else
                 log_error "无效选择"
                 read -p "按回车键继续..."

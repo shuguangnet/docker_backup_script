@@ -244,6 +244,7 @@ start_http_server() {
     local port="${2:-6886}"
 
     log_info "启动HTTP服务器在端口 $port..."
+    log_info "备份目录: $backup_dir"
 
     # 检查端口是否被占用
     if lsof -i ":$port" >/dev/null 2>&1; then
@@ -252,17 +253,37 @@ start_http_server() {
         sleep 2
     fi
 
+    # 检查是否是单个备份目录还是备份根目录
+    local is_single_backup=false
+    if [[ "$(basename "$backup_dir")" =~ ^.*_[0-9]{8}_[0-9]{6}$ ]]; then
+        is_single_backup=true
+        log_info "检测到单个备份目录，直接使用该目录"
+    else
+        log_info "检测到备份根目录，将创建包含所有备份的压缩包"
+    fi
+
     # 创建ZIP压缩包
     local zip_file="$backup_dir/docker-backup.zip"
     log_info "创建备份压缩包: $zip_file"
 
     if command -v zip >/dev/null 2>&1; then
         cd "$backup_dir"
-        if zip -r "docker-backup.zip" . -x "*.zip" >/dev/null 2>&1; then
-            log_success "压缩包创建成功"
+        if [[ "$is_single_backup" == true ]]; then
+            # 单个备份目录，直接压缩当前目录
+            if zip -r "docker-backup.zip" . -x "*.zip" >/dev/null 2>&1; then
+                log_success "压缩包创建成功"
+            else
+                log_error "压缩包创建失败"
+                return 1
+            fi
         else
-            log_error "压缩包创建失败"
-            return 1
+            # 备份根目录，压缩所有备份
+            if zip -r "docker-backup.zip" . -x "*.zip" >/dev/null 2>&1; then
+                log_success "压缩包创建成功"
+            else
+                log_error "压缩包创建失败"
+                return 1
+            fi
         fi
     else
         log_error "需要安装zip工具来创建压缩包"
@@ -1201,6 +1222,7 @@ main() {
 
     # 处理HTTP服务器选项
     if [[ "$START_HTTP" == true ]]; then
+        # 如果没有指定备份目录，使用默认目录
         if [[ -z "$BACKUP_DIR" ]]; then
             BACKUP_DIR="/tmp/docker-backups"
         fi
@@ -1211,6 +1233,14 @@ main() {
             exit 1
         fi
 
+        # 检查备份目录中是否有备份文件
+        local backup_count=$(find "$BACKUP_DIR" -maxdepth 1 -type d -name "*_*" | wc -l)
+        if [[ $backup_count -eq 0 ]]; then
+            log_error "备份目录中没有找到备份文件: $BACKUP_DIR"
+            exit 1
+        fi
+
+        log_info "找到 $backup_count 个备份文件"
         start_http_server "$BACKUP_DIR"
         exit 0
     fi
